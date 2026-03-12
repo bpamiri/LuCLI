@@ -7,7 +7,6 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Scanner;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -314,9 +313,12 @@ private static ObjectNode loadSettingsRoot(ObjectMapper mapper, Path settingsFil
     private static void initModule(String moduleName, boolean gitInit, boolean noGitInit) throws IOException {
         if (moduleName == null || moduleName.trim().isEmpty()) {
             // Interactive mode - ask for module name
-            Scanner scanner = new Scanner(System.in);
-            System.out.print("Enter module name: ");
-            moduleName = scanner.nextLine().trim();
+            moduleName = readLineFromConsole("Enter module name: ");
+            if (moduleName == null) {
+                System.err.println("Module name is required when running non-interactively.");
+                System.err.println("Usage: lucli module init <MODULE_NAME>");
+                System.exit(1);
+            }
             if (moduleName.isEmpty()) {
                 System.err.println("Module name cannot be empty.");
                 System.exit(1);
@@ -382,9 +384,10 @@ private static ObjectNode loadSettingsRoot(ObjectMapper mapper, Path settingsFil
         boolean shouldInit = gitInit;
 
         if (!gitInit && interactive) {
-            System.out.print("Initialize a git repository in this module directory? (Y/n): ");
-            Scanner scanner = new Scanner(System.in);
-            String answer = scanner.nextLine().trim();
+            String answer = readLineFromConsole("Initialize a git repository in this module directory? (Y/n): ");
+            if (answer == null) {
+                answer = "";
+            }
             shouldInit = answer.isEmpty() || answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes");
         }
 
@@ -994,6 +997,19 @@ public static void installModule(String moduleName, String installName, String g
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * Read a line from the system console. Returns null when no console is available
+     * or when end-of-input is encountered.
+     */
+    private static String readLineFromConsole(String prompt) {
+        java.io.Console console = System.console();
+        if (console == null) {
+            return null;
+        }
+        String value = console.readLine(prompt);
+        return value == null ? null : value.trim();
     }
     
     /**

@@ -3,11 +3,11 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **Fix: `lucli module init` Wizard Error:** Fixed an interactive prompt issue where module creation could fail with `❌ Error: No line found` after entering module details.
 ## 0.2.23
  - **Bootstrap Installers + Download UX:** Added cross-platform bootstrap installers (`install.sh` and `install.ps1`) for one-line install flows (`curl ... | sh` and `irm ... | iex`), published as release assets, and documented in README/install docs. Updated the download page with copyable install commands, pinned-version examples, and automatic pinned-version updates from the latest release (with release workflow stamping).
  - **Adding JQ and Curl to docker image**  - this allows us to use common tools alongside with lucli in pipelines
  - **Fix: Module Install with `--rev` on Branch Names:** Fixed `modules install --rev <branch>` failing when git is not available. You can now install modules from both tags and branches in non-git environments.
- - **Fix: Module Command Prompt Input Handling:** Stopped closing `System.in` in interactive module name prompts (`module` and `modules init`) to prevent follow-up terminal input from breaking after prompt use.
  - **Windows Bat File fixes**
  - **MCP Server for Modules:** Added `lucli mcp <module>` to run a per-module MCP server over stdio, exposing a module’s public functions as MCP tools (with JSON schema-derived input). 
  - **AI Command (`lucli ai`) Enhancements:**
