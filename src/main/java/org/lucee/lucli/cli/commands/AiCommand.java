@@ -177,6 +177,8 @@ public class AiCommand implements Callable<Integer> {
 
             @Option(names = "--json", description = "Print imported structure as JSON")
             private boolean json;
+            @Option(names = "--quiet", description = "Suppress printing imported config payload (useful for CI)")
+            private boolean quiet;
 
             @Option(names = "--show", description = "Show full secretKey values in output (otherwise masked)")
             private boolean showSecrets;
@@ -222,13 +224,14 @@ public class AiCommand implements Callable<Integer> {
 
                 PromptResult result = executeConfigAdd(request);
                 StringOutput.Quick.success("AI endpoint config saved in Lucee local config: " + request.name);
-
-                if (json) {
-                    String sourceJson = firstNonBlank(result.json, result.text);
-                    System.out.println(prettyJsonOrRaw(redactSecretKeysInJsonString(sourceJson, showSecrets)));
-                } else if (!isBlank(result.text)) {
-                    String sourceJson = firstNonBlank(result.json, result.text);
-                    System.out.println(prettyJsonOrRaw(redactSecretKeysInJsonString(sourceJson, showSecrets)));
+                if (!quiet) {
+                    if (json) {
+                        String sourceJson = firstNonBlank(result.json, result.text);
+                        System.out.println(prettyJsonOrRaw(redactSecretKeysInJsonString(sourceJson, showSecrets)));
+                    } else if (!isBlank(result.text)) {
+                        String sourceJson = firstNonBlank(result.json, result.text);
+                        System.out.println(prettyJsonOrRaw(redactSecretKeysInJsonString(sourceJson, showSecrets)));
+                    }
                 }
 
                 if (shouldTestAfterSave) {

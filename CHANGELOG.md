@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 - **Fix: `lucli module init` Wizard Error:** Fixed an interactive prompt issue where module creation could fail with `❌ Error: No line found` after entering module details.
+- **AI Config Quiet Mode:** Added `--quiet` to `lucli ai config add` to suppress printing imported config payload output, making CI logs safer.
 ## 0.2.23
  - **Bootstrap Installers + Download UX:** Added cross-platform bootstrap installers (`install.sh` and `install.ps1`) for one-line install flows (`curl ... | sh` and `irm ... | iex`), published as release assets, and documented in README/install docs. Updated the download page with copyable install commands, pinned-version examples, and automatic pinned-version updates from the latest release (with release workflow stamping).
  - **Adding JQ and Curl to docker image**  - this allows us to use common tools alongside with lucli in pipelines
