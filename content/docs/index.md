@@ -1,6 +1,9 @@
 ---
 title: LuCLI Documentation
 layout: docs
+description: Official LuCLI documentation for installation, CLI usage, server management, and configuration.
+og_description: Official LuCLI documentation for installation, CLI usage, server management, and configuration.
+og_image: /android-chrome-512x512.png
 ---
 Welcome to the LuCLI docs. This site is organized by **what you want to do**: get started quickly, run CFML from the CLI, manage Lucee servers, and configure projects safely.
 

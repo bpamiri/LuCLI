@@ -88,6 +88,24 @@ layout: docs
 # Content goes here
 ```
 
+Optional social/share preview fields (Open Graph + Twitter fallback) are also supported:
+
+```markdown
+---
+title: Page Title
+layout: docs
+description: One-sentence summary used for page meta description.
+og_title: Custom title for shared link previews (optional).
+og_description: Custom description for shared link previews (optional).
+og_image: /android-chrome-512x512.png
+og_type: article
+twitter_card: summary_large_image
+---
+```
+
+If you omit these, the layouts apply sensible defaults from `title`, `description`, and the canonical page URL.
+For blog posts (`layout: post`), if no `description`/`og_description` is provided, the first paragraph is used as a fallback preview description.
+
 ## Navigation
 
 The left sidebar navigation is automatically generated from the directory structure:
