@@ -34,6 +34,32 @@ config = {
 	// ,"missingErrorTemplate":"/lucee/templates/error/error-terminal.cfm"
 }
 
+if(
+	isDefined("__lucliSecretProviderConfigJson")
+	&& isSimpleValue(__lucliSecretProviderConfigJson)
+	&& len(trim(__lucliSecretProviderConfigJson))
+){
+	try{
+		secretProviders = deserializeJSON(__lucliSecretProviderConfigJson);
+		if(
+			isStruct(secretProviders)
+			&& !structIsEmpty(secretProviders)
+			&& (
+				!structKeyExists(config, "secretProvider")
+				|| !isStruct(config.secretProvider)
+				|| structIsEmpty(config.secretProvider)
+			)
+		){
+			config.secretProvider = secretProviders;
+		}
+	}
+	catch(any e){
+		if(__verboseMode){
+			systemOutput("Unable to parse fallback secret provider config: #e.message#", true);
+		}
+	}
+}
+
 // Overwrite whitep
 config["cfmlWriter"] = LuCLI.preserveWhitespace ? "regular": "white-space";
 

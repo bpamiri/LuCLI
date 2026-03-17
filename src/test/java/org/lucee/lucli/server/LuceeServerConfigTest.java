@@ -875,6 +875,84 @@ public class LuceeServerConfigTest {
     }
 
     @Test
+    void resolveConfigurationNode_injectsFallbackLocalSecretProviderWhenMissing() throws IOException {
+        String originalLucliHome = System.getProperty("lucli.home");
+        try {
+            Path lucliHome = tempDir.resolve(".lucli-home");
+            Path localStore = lucliHome.resolve("secrets").resolve("local.json");
+            Files.createDirectories(localStore.getParent());
+            Files.writeString(localStore, "{}");
+            System.setProperty("lucli.home", lucliHome.toString());
+
+            LuceeServerConfig.ServerConfig config = new LuceeServerConfig.ServerConfig();
+            config.configuration = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree("{\"inspectTemplate\":\"once\"}");
+
+            com.fasterxml.jackson.databind.JsonNode resolved =
+                LuceeServerConfig.resolveConfigurationNode(config, tempDir);
+
+            assertNotNull(resolved);
+            assertTrue(resolved.has("secretProvider"), "Expected fallback secretProvider block");
+            assertTrue(
+                resolved.path("secretProvider").has("lucli-local"),
+                "Expected fallback lucli-local provider entry"
+            );
+            assertEquals(
+                "org.lucee.lucli.secrets.LucliLocalSecretProvider",
+                resolved.path("secretProvider").path("lucli-local").path("class").asText()
+            );
+        } finally {
+            if (originalLucliHome == null) {
+                System.clearProperty("lucli.home");
+            } else {
+                System.setProperty("lucli.home", originalLucliHome);
+            }
+        }
+    }
+
+    @Test
+    void resolveConfigurationNode_doesNotOverrideExistingSecretProviderConfig() throws IOException {
+        String originalLucliHome = System.getProperty("lucli.home");
+        try {
+            Path lucliHome = tempDir.resolve(".lucli-home-existing");
+            Path localStore = lucliHome.resolve("secrets").resolve("local.json");
+            Files.createDirectories(localStore.getParent());
+            Files.writeString(localStore, "{}");
+            System.setProperty("lucli.home", lucliHome.toString());
+
+            LuceeServerConfig.ServerConfig config = new LuceeServerConfig.ServerConfig();
+            config.configuration = new com.fasterxml.jackson.databind.ObjectMapper().readTree("""
+                {
+                  "secretProvider": {
+                    "custom": {
+                      "class": "example.CustomSecretProvider"
+                    }
+                  }
+                }
+                """);
+
+            com.fasterxml.jackson.databind.JsonNode resolved =
+                LuceeServerConfig.resolveConfigurationNode(config, tempDir);
+
+            assertNotNull(resolved);
+            assertEquals(
+                "example.CustomSecretProvider",
+                resolved.path("secretProvider").path("custom").path("class").asText()
+            );
+            assertFalse(
+                resolved.path("secretProvider").has("lucli-local"),
+                "Fallback provider should not be injected when providers already exist"
+            );
+        } finally {
+            if (originalLucliHome == null) {
+                System.clearProperty("lucli.home");
+            } else {
+                System.setProperty("lucli.home", originalLucliHome);
+            }
+        }
+    }
+
+    @Test
     void writeCfConfigIfPresent_writesToJettyContextForJettyRuntime() throws IOException {
         LuceeServerConfig.ServerConfig config = new LuceeServerConfig.ServerConfig();
         config.runtime = new LuceeServerConfig.RuntimeConfig();

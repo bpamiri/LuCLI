@@ -10,9 +10,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import org.lucee.lucli.secrets.LocalSecretStore;
-import org.lucee.lucli.secrets.SecretStore;
-import org.lucee.lucli.secrets.SecretStoreException;
+import org.lucee.lucli.secrets.LucliSecretProviderSupport;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -984,9 +982,12 @@ public class LuceeServerConfig {
     /**
      * Replace secret placeholders in a string.
      * Supports both new #secret:NAME# syntax (preferred) and deprecated ${secret:NAME} syntax.
-     * This is evaluated after environment variables, and only for the local provider.
      */
-    private static String replaceSecretPlaceholders(String value, SecretStore store) throws SecretStoreException {
+    private static String replaceSecretPlaceholders(
+        String value,
+        String providerName,
+        char[] localPassphrase
+    ) throws Exception {
         if (value == null) {
             return null;
         }
@@ -996,11 +997,7 @@ public class LuceeServerConfig {
         StringBuffer sb1 = new StringBuffer();
         while (hashMatcher.find()) {
             String name = hashMatcher.group(1).trim();
-            java.util.Optional<char[]> secret = store.get(name);
-            if (secret.isEmpty()) {
-                throw new SecretStoreException("Secret '" + name + "' not found for placeholder in configuration");
-            }
-            String replacement = new String(secret.get());
+            String replacement = readSecretForPlaceholder(name, providerName, localPassphrase, true);
             hashMatcher.appendReplacement(sb1, java.util.regex.Matcher.quoteReplacement(replacement));
         }
         hashMatcher.appendTail(sb1);
@@ -1014,11 +1011,7 @@ public class LuceeServerConfig {
         while (dollarMatcher.find()) {
             foundDeprecated = true;
             String name = dollarMatcher.group(1).trim();
-            java.util.Optional<char[]> secret = store.get(name);
-            if (secret.isEmpty()) {
-                throw new SecretStoreException("Secret '" + name + "' not found for placeholder in configuration");
-            }
-            String replacement = new String(secret.get());
+            String replacement = readSecretForPlaceholder(name, providerName, localPassphrase, true);
             dollarMatcher.appendReplacement(sb2, java.util.regex.Matcher.quoteReplacement(replacement));
         }
         dollarMatcher.appendTail(sb2);
@@ -1036,7 +1029,11 @@ public class LuceeServerConfig {
      * Used for protected zones (configuration blocks) where ${...} must be preserved.
      * (In protected zones, #env:VAR# is the only env var syntax processed.)
      */
-    private static String replaceLucliSecretPlaceholders(String value, SecretStore store) throws SecretStoreException {
+    private static String replaceLucliSecretPlaceholders(
+        String value,
+        String providerName,
+        char[] localPassphrase
+    ) throws Exception {
         if (value == null) {
             return null;
         }
@@ -1045,15 +1042,28 @@ public class LuceeServerConfig {
         StringBuffer sb = new StringBuffer();
         while (matcher.find()) {
             String name = matcher.group(1).trim();
-            java.util.Optional<char[]> secret = store.get(name);
-            if (secret.isEmpty()) {
-                throw new SecretStoreException("Secret '" + name + "' not found for placeholder in configuration");
-            }
-            String replacement = new String(secret.get());
+            String replacement = readSecretForPlaceholder(name, providerName, localPassphrase, true);
             matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(sb);
         return sb.toString();
+    }
+
+    private static String readSecretForPlaceholder(
+        String secretName,
+        String providerName,
+        char[] localPassphrase,
+        boolean required
+    ) throws Exception {
+        if (LucliSecretProviderSupport.isLocalProviderName(providerName)) {
+            return LucliSecretProviderSupport.readSecretFromLocalStore(
+                secretName,
+                localPassphrase,
+                required,
+                "Enter secrets passphrase to unlock config secrets: "
+            );
+        }
+        return LucliSecretProviderSupport.readSecretViaLuceeProvider(providerName, secretName);
     }
 
     /**
@@ -1122,43 +1132,48 @@ public class LuceeServerConfig {
         if (!hasSecretPlaceholders(config)) {
             return; // nothing to do
         }
+        String providerName = LucliSecretProviderSupport.getSelectedProviderName();
+        char[] localPassphrase = null;
 
-        Path storePath = getLucliHome().resolve("secrets").resolve("local.json");
-        if (!Files.exists(storePath)) {
-            throw new IOException("Configuration references secret placeholders but local secret store does not exist. Run 'lucli secrets init' and define the required secrets.");
-        }
-
-        // Prefer non-interactive passphrase from environment when available
-        char[] passphrase = null;
-        String envPass = System.getenv("LUCLI_SECRETS_PASSPHRASE");
-        if (envPass != null && !envPass.isEmpty()) {
-            passphrase = envPass.toCharArray();
-        } else if (System.console() != null) {
-            passphrase = System.console().readPassword("Enter secrets passphrase to unlock config secrets: ");
-        }
-
-        if (passphrase == null || passphrase.length == 0) {
-            throw new IOException("Configuration requires secrets but no passphrase is available. Set LUCLI_SECRETS_PASSPHRASE or run with an interactive console.");
-        }
-
-        SecretStore store;
-        try {
-            store = new LocalSecretStore(storePath, passphrase);
-        } catch (SecretStoreException e) {
-            throw new IOException("Failed to open local secret store: " + e.getMessage(), e);
+        if (LucliSecretProviderSupport.isLocalProviderName(providerName)) {
+            if (!LucliSecretProviderSupport.hasLocalStoreFile()) {
+                throw new IOException(
+                    "Configuration references secret placeholders but local secret store does not exist. " +
+                    "Run 'lucli secrets init' and define the required secrets."
+                );
+            }
+            localPassphrase = LucliSecretProviderSupport.resolvePassphrase(
+                null,
+                "Enter secrets passphrase to unlock config secrets: "
+            );
+            if (localPassphrase == null || localPassphrase.length == 0) {
+                throw new IOException(
+                    "Configuration requires secrets but no passphrase is available. Set " +
+                    LucliSecretProviderSupport.DEFAULT_PASSPHRASE_ENV +
+                    " or run with an interactive console."
+                );
+            }
         }
 
         try {
             // admin.password: supports both syntaxes (not a protected zone)
             if (config.admin != null && config.admin.password != null) {
-                config.admin.password = replaceSecretPlaceholders(config.admin.password, store);
+                config.admin.password = replaceSecretPlaceholders(
+                    config.admin.password,
+                    providerName,
+                    localPassphrase
+                );
             }
             // PROTECTED ZONE: configuration block — only #secret:NAME# is resolved.
             // ${secret:NAME} is left intact for Lucee runtime.
             if (config.configuration != null) {
-                config.configuration = substituteLucliSecretsInJsonNode(config.configuration, store);
+                config.configuration = substituteLucliSecretsInJsonNode(
+                    config.configuration,
+                    providerName,
+                    localPassphrase
+                );
             }
-        } catch (SecretStoreException e) {
+        } catch (Exception e) {
             throw new IOException(e.getMessage(), e);
         }
     }
@@ -1168,25 +1183,32 @@ public class LuceeServerConfig {
      * Supports both #secret:NAME# and deprecated ${secret:NAME} syntax.
      * Used for non-protected zones.
      */
-    private static com.fasterxml.jackson.databind.JsonNode substituteSecretsInJsonNode(com.fasterxml.jackson.databind.JsonNode node, SecretStore store) throws SecretStoreException {
+    private static com.fasterxml.jackson.databind.JsonNode substituteSecretsInJsonNode(
+        com.fasterxml.jackson.databind.JsonNode node,
+        String providerName,
+        char[] localPassphrase
+    ) throws Exception {
         if (node == null) {
             return null;
         }
         if (node.isTextual()) {
-            String replaced = replaceSecretPlaceholders(node.asText(), store);
+            String replaced = replaceSecretPlaceholders(node.asText(), providerName, localPassphrase);
             return objectMapper.getNodeFactory().textNode(replaced);
         } else if (node.isArray()) {
             com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.getNodeFactory().arrayNode();
             for (com.fasterxml.jackson.databind.JsonNode element : node) {
-                arrayNode.add(substituteSecretsInJsonNode(element, store));
+                arrayNode.add(substituteSecretsInJsonNode(element, providerName, localPassphrase));
             }
             return arrayNode;
         } else if (node.isObject()) {
             com.fasterxml.jackson.databind.node.ObjectNode objNode = objectMapper.getNodeFactory().objectNode();
             node.fields().forEachRemaining(entry -> {
                 try {
-                    objNode.set(entry.getKey(), substituteSecretsInJsonNode(entry.getValue(), store));
-                } catch (SecretStoreException e) {
+                    objNode.set(
+                        entry.getKey(),
+                        substituteSecretsInJsonNode(entry.getValue(), providerName, localPassphrase)
+                    );
+                } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
             });
@@ -1200,25 +1222,32 @@ public class LuceeServerConfig {
      * Recursively substitute only #secret:NAME# placeholders in a JSON node.
      * Used for protected zones (configuration blocks) where ${...} must be preserved.
      */
-    private static com.fasterxml.jackson.databind.JsonNode substituteLucliSecretsInJsonNode(com.fasterxml.jackson.databind.JsonNode node, SecretStore store) throws SecretStoreException {
+    private static com.fasterxml.jackson.databind.JsonNode substituteLucliSecretsInJsonNode(
+        com.fasterxml.jackson.databind.JsonNode node,
+        String providerName,
+        char[] localPassphrase
+    ) throws Exception {
         if (node == null) {
             return null;
         }
         if (node.isTextual()) {
-            String replaced = replaceLucliSecretPlaceholders(node.asText(), store);
+            String replaced = replaceLucliSecretPlaceholders(node.asText(), providerName, localPassphrase);
             return objectMapper.getNodeFactory().textNode(replaced);
         } else if (node.isArray()) {
             com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.getNodeFactory().arrayNode();
             for (com.fasterxml.jackson.databind.JsonNode element : node) {
-                arrayNode.add(substituteLucliSecretsInJsonNode(element, store));
+                arrayNode.add(substituteLucliSecretsInJsonNode(element, providerName, localPassphrase));
             }
             return arrayNode;
         } else if (node.isObject()) {
             com.fasterxml.jackson.databind.node.ObjectNode objNode = objectMapper.getNodeFactory().objectNode();
             node.fields().forEachRemaining(entry -> {
                 try {
-                    objNode.set(entry.getKey(), substituteLucliSecretsInJsonNode(entry.getValue(), store));
-                } catch (SecretStoreException e) {
+                    objNode.set(
+                        entry.getKey(),
+                        substituteLucliSecretsInJsonNode(entry.getValue(), providerName, localPassphrase)
+                    );
+                } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
             });
@@ -1899,6 +1928,10 @@ public class LuceeServerConfig {
             }
             result = mergeMappings(result, dependencyMappings);
         }
+
+        // If no provider is configured but we have a local LuCLI store, inject
+        // a fallback LuCLI local provider so Lucee can resolve secrets natively.
+        result = LucliSecretProviderSupport.ensureFallbackSecretProvider(result, objectMapper);
 
         return result;
     }

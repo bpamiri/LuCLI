@@ -1,9 +1,7 @@
 package org.lucee.lucli.modules;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -16,7 +14,7 @@ import java.util.regex.Pattern;
 import org.lucee.lucli.LuCLI;
 import org.lucee.lucli.Settings;
 import org.lucee.lucli.secrets.LocalSecretStore;
-import org.lucee.lucli.secrets.SecretStore;
+import org.lucee.lucli.secrets.LucliSecretProviderSupport;
 import org.lucee.lucli.secrets.SecretStoreException;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,7 +32,8 @@ public class ModuleRuntimeConfigResolver {
     private final boolean allowDotEnvFallback;
     private final char[] passphraseOverride;
 
-    private SecretStore secretStore;
+    private LocalSecretStore localSecretStore;
+    private String selectedProviderName;
 
     public ModuleRuntimeConfigResolver(boolean strictMode, boolean allowDotEnvFallback) {
         this(strictMode, allowDotEnvFallback, null);
@@ -75,6 +74,7 @@ public class ModuleRuntimeConfigResolver {
     }
 
     public ResolutionResult resolve(String moduleName, ModuleConfig moduleConfig, Path projectDir) throws Exception {
+        selectedProviderName = LucliSecretProviderSupport.getSelectedProviderName();
         Path moduleEnvPath = projectDir.resolve(MODULE_ENV_FILE);
         Path dotEnvPath = projectDir.resolve(DOT_ENV_FILE);
 
@@ -196,52 +196,59 @@ public class ModuleRuntimeConfigResolver {
         if (name == null || name.isBlank()) {
             return null;
         }
-        SecretStore store = getSecretStore(required);
-        if (store == null) {
-            return null;
-        }
-        Optional<char[]> value = store.get(name);
-        if (value.isEmpty()) {
-            if (required) {
-                throw new IllegalStateException("Secret '" + name + "' not found in local secret store");
+
+        if (LucliSecretProviderSupport.isLocalProviderName(selectedProviderName)) {
+            LocalSecretStore store = getLocalSecretStore(required);
+            if (store == null) {
+                return null;
             }
-            return null;
+            Optional<char[]> value = store.get(name);
+            if (value.isEmpty()) {
+                if (required) {
+                    throw new IllegalStateException("Secret '" + name + "' not found in local secret store");
+                }
+                return null;
+            }
+            return new String(value.get());
         }
-        return new String(value.get());
+
+        String providerValue = LucliSecretProviderSupport.readSecretViaLuceeProvider(selectedProviderName, name);
+        if ((providerValue == null || providerValue.isBlank()) && required) {
+            throw new IllegalStateException(
+                "Secret '" + name + "' was not found for provider '" + selectedProviderName + "'."
+            );
+        }
+        return providerValue;
     }
 
-    private SecretStore getSecretStore(boolean required) throws Exception {
-        if (secretStore != null) {
-            return secretStore;
+    private LocalSecretStore getLocalSecretStore(boolean required) throws Exception {
+        if (localSecretStore != null) {
+            return localSecretStore;
         }
 
-        Path storePath = getLucliHome().resolve("secrets").resolve("local.json");
+        Path storePath = LucliSecretProviderSupport.getLocalStorePath();
         if (!Files.exists(storePath)) {
             if (required) {
-                throw new IllegalStateException("Secret store not found at " + storePath
-                    + ". Run 'lucli secrets init' to create it.");
+                throw new IllegalStateException(
+                    "Local secret store not found at " + storePath +
+                    ". Run 'lucli secrets init' to create it."
+                );
             }
             return null;
         }
 
-        char[] passphrase = passphraseOverride;
-        if (passphrase == null || passphrase.length == 0) {
-            String envPass = System.getenv("LUCLI_SECRETS_PASSPHRASE");
-            if (envPass != null && !envPass.isEmpty()) {
-                passphrase = envPass.toCharArray();
-            } else if (System.console() != null) {
-                passphrase = System.console().readPassword("Enter secrets passphrase to unlock module secrets: ");
-            }
-        }
-
+        char[] passphrase = LucliSecretProviderSupport.resolvePassphrase(
+            passphraseOverride,
+            "Enter secrets passphrase to unlock module secrets: "
+        );
         if (passphrase == null || passphrase.length == 0) {
             throw new IllegalStateException("Module execution requires secrets but no passphrase is available. "
-                + "Set LUCLI_SECRETS_PASSPHRASE or run in interactive mode.");
+                + "Set " + LucliSecretProviderSupport.DEFAULT_PASSPHRASE_ENV + " or run in interactive mode.");
         }
 
         try {
-            secretStore = new LocalSecretStore(storePath, passphrase);
-            return secretStore;
+            localSecretStore = new LocalSecretStore(storePath, passphrase);
+            return localSecretStore;
         } catch (SecretStoreException e) {
             throw new IllegalStateException("Failed to open local secret store: " + e.getMessage(), e);
         }
@@ -252,17 +259,6 @@ public class ModuleRuntimeConfigResolver {
         strictEnv.putAll(resolvedEnv);
         strictEnv.putAll(resolvedSecrets);
         return strictEnv;
-    }
-
-    private Path getLucliHome() {
-        String home = System.getProperty("lucli.home");
-        if (home == null || home.isBlank()) {
-            home = System.getenv("LUCLI_HOME");
-        }
-        if (home == null || home.isBlank()) {
-            home = Paths.get(System.getProperty("user.home"), ".lucli").toString();
-        }
-        return Paths.get(home);
     }
 
     public static class ResolutionResult {

@@ -14,6 +14,7 @@ import javax.script.ScriptException;
 import org.lucee.lucli.modules.ModuleCommand;
 import org.lucee.lucli.modules.ModuleConfig;
 import org.lucee.lucli.modules.ModuleRuntimeConfigResolver;
+import org.lucee.lucli.secrets.LucliSecretProviderSupport;
 
 import lucee.runtime.script.LuceeScriptEngineFactory;
 import lucee.runtime.type.Array;
@@ -121,6 +122,7 @@ public class LuceeScriptEngine {
         engine.put("__verboseMode", isVerboseMode());
         engine.put("__debugMode", isDebugMode());
         engine.put("__preserveWhitespace", LuCLI.preserveWhitespace);
+        engine.put("__lucliSecretProviderConfigJson", LucliSecretProviderSupport.getFallbackSecretProviderJson());
         
         Timer.stop("Setup Engine Variables");
         

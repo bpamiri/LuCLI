@@ -67,6 +67,10 @@
     "moduleRuntime": {
       "$ref": "#/definitions/moduleRuntime",
       "description": "Runtime behavior controls for LuCLI module env and secret resolution."
+    },
+    "secrets": {
+      "$ref": "#/definitions/secretsSettings",
+      "description": "LuCLI secret-provider preferences used by secrets commands and provider bootstrap."
     }
   },
   "definitions": {
@@ -173,6 +177,17 @@
         "grantedAt": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "secretsSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Selected secret provider name used by LuCLI commands.",
+          "default": "lucli-local"
         }
       }
     }
