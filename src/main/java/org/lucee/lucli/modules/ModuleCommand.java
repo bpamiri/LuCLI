@@ -81,7 +81,7 @@ public static void executeModule(String[] args) {
     }
 }
 
-private static void ensureModulePermissionsGranted(String moduleName, ModuleConfig config) throws IOException {
+private static void ensureModulePermissionsGranted(String moduleName, ModuleConfig config, boolean force) throws IOException {
     if (config == null || !config.hasDeclaredPermissions()) {
         return;
     }
@@ -146,15 +146,19 @@ private static void ensureModulePermissionsGranted(String moduleName, ModuleConf
         System.out.println("  New secret aliases requiring approval: " + String.join(", ", newlyRequestedSecrets));
     }
 
-    java.io.Console console = System.console();
-    if (console == null) {
-        throw new IOException("Cannot prompt for module permission approval in non-interactive mode for module '"
-            + moduleName + "'.");
-    }
+    if (force) {
+        System.out.println("  Auto-approving requested permissions because --force was provided.");
+    } else {
+        java.io.Console console = System.console();
+        if (console == null) {
+            throw new IOException("Cannot prompt for module permission approval in non-interactive mode for module '"
+                + moduleName + "'. Re-run with --force to approve requested permissions.");
+        }
 
-    String answer = console.readLine("Allow these permissions? (y/N): ");
-    if (answer == null || (!answer.trim().equalsIgnoreCase("y") && !answer.trim().equalsIgnoreCase("yes"))) {
-        throw new IOException("Permission approval denied for module '" + moduleName + "'.");
+        String answer = console.readLine("Allow these permissions? (y/N): ");
+        if (answer == null || (!answer.trim().equalsIgnoreCase("y") && !answer.trim().equalsIgnoreCase("yes"))) {
+            throw new IOException("Permission approval denied for module '" + moduleName + "'.");
+        }
     }
 
     ObjectNode updatedGrant = mapper.createObjectNode();
@@ -750,6 +754,11 @@ public static void installModule(String moduleName, String gitUrl, String explic
      * Install a module with optional install alias/local module name override.
      */
 public static void installModule(String moduleName, String installName, String gitUrl, String explicitRef, boolean force) throws Exception {
+        installModule(moduleName, installName, gitUrl, explicitRef, force, force);
+    }
+
+    private static void installModule(String moduleName, String installName, String gitUrl, String explicitRef,
+                                      boolean force, boolean autoApprovePermissions) throws Exception {
         String requestedModuleName = normalizeModuleName(moduleName);
         String requestedInstallName = normalizeModuleName(installName);
 
@@ -857,7 +866,7 @@ public static void installModule(String moduleName, String installName, String g
             }
 
             ModuleConfig sourceConfig = ModuleConfig.load(sourceDir);
-            ensureModulePermissionsGranted(targetModuleName, sourceConfig);
+            ensureModulePermissionsGranted(targetModuleName, sourceConfig, autoApprovePermissions);
 
             Path modulesDir = getModulesDirectory();
             Path targetDir = modulesDir.resolve(targetModuleName);
@@ -1214,7 +1223,7 @@ public static void installModule(String moduleName, String installName, String g
         }
 
         // Ensure force is enabled for updates regardless of user flag
-        installModule(moduleName, effectiveUrl, effectiveRef, true);
+        installModule(moduleName, null, effectiveUrl, effectiveRef, true, force);
     }
 
     /**

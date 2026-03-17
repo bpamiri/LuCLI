@@ -36,7 +36,7 @@ public class ModulesUpdateCommandImpl implements Callable<Integer> {
 
     @Option(
         names = {"-f", "--force"},
-        description = "Overwrite existing module if it already exists"
+        description = "Auto-approve module permissions (useful in non-interactive mode)"
     )
     private boolean force;
 
