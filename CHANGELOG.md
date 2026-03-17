@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
  - **Bootstrap Installers + Download UX:** Added cross-platform bootstrap installers (`install.sh` and `install.ps1`) for one-line install flows (`curl ... | sh` and `irm ... | iex`), published as release assets, and documented in README/install docs. Updated the download page with copyable install commands, pinned-version examples, and automatic pinned-version updates from the latest release (with release workflow stamping).
  - **Adding JQ and Curl to docker image**  - this allows us to use common tools alongside with lucli in pipelines
  - **Fix: Module Install with `--rev` on Branch Names:** Fixed `modules install --rev <branch>` failing when git is not available. You can now install modules from both tags and branches in non-git environments.
+ - **`.lucli` Output Redirection:** Added script-level output redirection support in `.lucli` files using `>` (overwrite) and `>>` (append), so command/module output can be routed directly to files during automation runs.
  - **Windows Bat File fixes**
  - **MCP Server for Modules:** Added `lucli mcp <module>` to run a per-module MCP server over stdio, exposing a module’s public functions as MCP tools (with JSON schema-derived input). 
  - **AI Command (`lucli ai`) Enhancements:**
@@ -19,6 +20,10 @@ All notable changes to this project will be documented in this file.
    - Added provider listing from Lucee CFConfig (`lucli ai list` / `lucli ai config list`) and compatibility handling for `--refresh`.
    - Added secret key masking by default in list/config output, with explicit `--show` to reveal full values when needed.
    - Updated prompt UX to support repeatable `--image`, rules via `--rules-file` / `--rules-folder`, and clearer instruction composition behavior.
+   - Added `@file` support for `--text` so prompt task content can be loaded directly from files.
+   - Added `lucli ai prompt --dry-run` to print the fully resolved prompt payload/composed question without sending a provider request.
+   - Added `lucli ai prompt --output-file <path>` support to persist rendered prompt responses (including `--json` and dry-run output), with overwrite protection via `--force`.
+   - Fixed `--system @file` / `--text @file` handling by disabling picocli `@argfile` expansion, so file paths are consumed literally and full file contents are loaded as intended.
  - **Module Runtime Permissions + Env/Secrets Resolution:**
    - Added module metadata keys `permissions.env` and `permissions.secrets` to declare runtime env/secret aliases.
    - Added shorthand compatibility arrays `envVars` and `secrets` (treated as required aliases).

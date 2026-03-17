@@ -29,6 +29,7 @@ import org.lucee.lucli.paths.LucliPaths;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import picocli.CommandLine;
@@ -483,6 +484,57 @@ public class AiCommand implements Callable<Integer> {
         }
     }
 
+    private static String renderPromptResult(PromptResult result, boolean jsonOutput) throws Exception {
+        if (jsonOutput) {
+            if (!isBlank(result.json)) {
+                return prettyJsonOrRaw(result.json);
+            }
+            Map<String, Object> envelope = new LinkedHashMap<>();
+            envelope.put("result", result.text);
+            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(envelope);
+        }
+        if (!isBlank(result.text)) {
+            return result.text;
+        }
+        return null;
+    }
+
+    private static int emitPromptOutput(String output, Path outputFile, boolean force) {
+        if (output == null) {
+            return 0;
+        }
+
+        System.out.println(output);
+        if (outputFile == null) {
+            return 0;
+        }
+
+        try {
+            writePromptOutputFile(outputFile, output, force);
+            return 0;
+        } catch (Exception e) {
+            StringOutput.Quick.error("Failed to write prompt output file: " + e.getMessage());
+            return 1;
+        }
+    }
+
+    private static void writePromptOutputFile(Path outputFile, String output, boolean force) throws IOException {
+        Path normalized = normalizePath(outputFile);
+        if (Files.exists(normalized) && Files.isDirectory(normalized)) {
+            throw new IOException("Output path is a directory: " + normalized);
+        }
+        if (Files.exists(normalized) && !force) {
+            throw new IOException("Output file already exists: " + normalized + " (use --force to overwrite)");
+        }
+
+        Path parent = normalized.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
+        Files.writeString(normalized, output + System.lineSeparator(), StandardCharsets.UTF_8);
+    }
+
     @Command(
         name = "prompt",
         description = "Run one-shot prompt using a Lucee-managed endpoint",
@@ -490,7 +542,7 @@ public class AiCommand implements Callable<Integer> {
     )
     static class PromptCommand implements Callable<Integer> {
 
-        @Option(names = "--text", description = "Prompt text")
+        @Option(names = "--text", description = "Prompt text (plain text or @file)")
         private String text;
         @Option(names = "--image", description = "Image file path (repeatable)")
         private List<Path> images = new ArrayList<>();
@@ -525,6 +577,14 @@ public class AiCommand implements Callable<Integer> {
         @Option(names = "--json", description = "Output raw JSON when possible")
         private boolean json;
 
+        @Option(names = "--dry-run", description = "Show resolved prompt payload and exit without sending request")
+        private boolean dryRun;
+        @Option(names = "--output-file", description = "Write rendered output to file")
+        private Path outputFile;
+
+        @Option(names = "--force", description = "Overwrite output file if it already exists")
+        private boolean force;
+
         @Override
         public Integer call() throws Exception {
             AiLocalConfig config = loadAiLocalConfig();
@@ -544,7 +604,7 @@ public class AiCommand implements Callable<Integer> {
                 return 1;
             }
 
-            String finalText = firstNonBlank(text, skill != null ? skill.text : null);
+            String finalText = firstNonBlank(readPromptText(text), skill != null ? skill.text : null);
             String baseSystem = firstNonBlank(readSystemInstruction(systemInstruction), skill != null ? skill.system : null);
             String finalModel = firstNonBlank(model, skill != null ? skill.model : null, config.defaultModel);
             Double finalTemperature = firstNonNull(temperature, skill != null ? skill.temperature : null);
@@ -576,26 +636,19 @@ public class AiCommand implements Callable<Integer> {
             request.files = normalizedImages.stream()
                 .map(path -> path.toAbsolutePath().normalize().toString())
                 .collect(Collectors.toList());
+
+            if (dryRun) {
+                String dryRunOutput = renderPromptDryRun(request, normalizedRuleFiles, skill, json);
+                return emitPromptOutput(dryRunOutput, outputFile, force);
+            }
             PromptResult result;
             try {
                 result = executePrompt(request);
             } catch (Exception e) {
                 return printFriendlyAiFailure("AI prompt failed", endpoint, e);
             }
-
-            if (json) {
-                if (!isBlank(result.json)) {
-                    System.out.println(prettyJsonOrRaw(result.json));
-                } else {
-                    Map<String, Object> envelope = new LinkedHashMap<>();
-                    envelope.put("result", result.text);
-                    System.out.println(MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(envelope));
-                }
-            } else if (!isBlank(result.text)) {
-                System.out.println(result.text);
-            }
-
-            return 0;
+            String renderedOutput = renderPromptResult(result, json);
+            return emitPromptOutput(renderedOutput, outputFile, force);
         }
     }
 
@@ -1093,6 +1146,143 @@ if (isSimpleValue(aiResponse)) {
         return primary.trim() + "\n\n" + secondary.trim();
     }
 
+    private static String buildComposedQuestionText(String system, String text) {
+        String normalizedText = isBlank(text) ? "" : text;
+        if (isBlank(system)) {
+            return normalizedText;
+        }
+        if (isBlank(normalizedText)) {
+            return "[Instructions]\n" + system;
+        }
+        return "[Instructions]\n" + system + "\n\n[Task]\n" + normalizedText;
+    }
+
+    private static String renderPromptDryRun(PromptRequest request, List<Path> normalizedRuleFiles, SkillDefinition skill, boolean jsonOutput) throws Exception {
+        ObjectNode envelope = buildPromptDryRunEnvelope(request, normalizedRuleFiles, skill);
+        if (jsonOutput) {
+            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(envelope);
+        }
+
+        StringBuilder output = new StringBuilder();
+        output.append("AI prompt dry-run (no request sent)\n");
+        output.append("  endpoint: ").append(fallback(request.endpoint)).append('\n');
+        output.append("  model: ").append(fallback(request.model)).append('\n');
+        output.append("  temperature: ").append(request.temperature == null ? "(unset)" : request.temperature).append('\n');
+        output.append("  timeout: ").append(request.timeoutMillis == null ? "(unset)" : request.timeoutMillis).append('\n');
+        if (skill != null) {
+            output.append("  skill: ").append(fallback(skill.name)).append(isBlank(skill.source) ? "" : " (" + skill.source + ")").append('\n');
+        }
+
+        if (normalizedRuleFiles == null || normalizedRuleFiles.isEmpty()) {
+            output.append("  rules files: (none)\n");
+        } else {
+            output.append("  rules files:\n");
+            for (Path path : normalizedRuleFiles) {
+                output.append("    - ").append(path.toAbsolutePath().normalize()).append('\n');
+            }
+        }
+
+        if (request.files == null || request.files.isEmpty()) {
+            output.append("  image files: (none)\n");
+        } else {
+            output.append("  image files:\n");
+            for (String path : request.files) {
+                output.append("    - ").append(path).append('\n');
+            }
+        }
+
+        String composed = envelope.path("composedQuestionText").asText("");
+        output.append('\n');
+        output.append("[Composed question text]\n");
+        if (isBlank(composed)) {
+            output.append("(empty)");
+        } else {
+            output.append(composed);
+        }
+        return output.toString();
+    }
+
+    private static ObjectNode buildPromptDryRunEnvelope(PromptRequest request, List<Path> normalizedRuleFiles, SkillDefinition skill) {
+        ObjectNode envelope = MAPPER.createObjectNode();
+        envelope.put("dryRun", true);
+        envelope.put("endpoint", request.endpoint);
+        if (isBlank(request.model)) {
+            envelope.putNull("model");
+        } else {
+            envelope.put("model", request.model);
+        }
+        if (request.temperature == null) {
+            envelope.putNull("temperature");
+        } else {
+            envelope.put("temperature", request.temperature);
+        }
+        if (request.timeoutMillis == null) {
+            envelope.putNull("timeoutMillis");
+        } else {
+            envelope.put("timeoutMillis", request.timeoutMillis);
+        }
+
+        if (isBlank(request.system)) {
+            envelope.putNull("system");
+        } else {
+            envelope.put("system", request.system);
+        }
+        if (isBlank(request.text)) {
+            envelope.putNull("text");
+        } else {
+            envelope.put("text", request.text);
+        }
+
+        if (skill != null) {
+            ObjectNode skillNode = envelope.putObject("skill");
+            skillNode.put("name", isBlank(skill.name) ? "(unnamed)" : skill.name);
+            if (isBlank(skill.source)) {
+                skillNode.putNull("source");
+            } else {
+                skillNode.put("source", skill.source);
+            }
+        } else {
+            envelope.putNull("skill");
+        }
+
+        ArrayNode rules = envelope.putArray("rulesFiles");
+        if (normalizedRuleFiles != null) {
+            for (Path path : normalizedRuleFiles) {
+                rules.add(path.toAbsolutePath().normalize().toString());
+            }
+        }
+
+        ArrayNode images = envelope.putArray("imageFiles");
+        if (request.files != null) {
+            for (String filePath : request.files) {
+                images.add(filePath);
+            }
+        }
+
+        String composed = buildComposedQuestionText(request.system, request.text);
+        envelope.put("composedQuestionText", composed == null ? "" : composed);
+
+        if (request.files == null || request.files.isEmpty()) {
+            envelope.put("questionType", "text");
+            envelope.put("questionPreview", composed == null ? "" : composed);
+        } else {
+            envelope.put("questionType", "multimodal");
+            ArrayNode questionPreview = envelope.putArray("questionPreview");
+            if (!isBlank(composed)) {
+                ObjectNode textPart = questionPreview.addObject();
+                textPart.put("type", "text");
+                textPart.put("text", composed);
+            }
+            for (String filePath : request.files) {
+                ObjectNode imagePart = questionPreview.addObject();
+                imagePart.put("type", "imageBinaryFile");
+                imagePart.put("path", filePath);
+            }
+        }
+
+        return envelope;
+    }
+
     private static boolean isImageFile(Path path) {
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
         for (String ext : IMAGE_EXTENSIONS) {
@@ -1560,8 +1750,15 @@ if (isSimpleValue(aiResponse)) {
             return null;
         }
     }
+    private static String readPromptText(String value) throws IOException {
+        return readTextOrFile(value, "Prompt text");
+    }
 
     private static String readSystemInstruction(String value) throws IOException {
+        return readTextOrFile(value, "System instruction");
+    }
+
+    private static String readTextOrFile(String value, String label) throws IOException {
         if (isBlank(value)) {
             return null;
         }
@@ -1569,9 +1766,13 @@ if (isSimpleValue(aiResponse)) {
         if (!trimmed.startsWith("@")) {
             return trimmed;
         }
-        Path file = normalizePath(Paths.get(trimmed.substring(1)));
+        String rawPath = trimmed.substring(1).trim();
+        if (rawPath.isEmpty()) {
+            throw new IllegalArgumentException(label + " file path is empty after '@'.");
+        }
+        Path file = normalizePath(Paths.get(rawPath));
         if (!Files.exists(file) || !Files.isRegularFile(file)) {
-            throw new IllegalArgumentException("System instruction file not found: " + file);
+            throw new IllegalArgumentException(label + " file not found: " + file);
         }
         return Files.readString(file, StandardCharsets.UTF_8);
     }

@@ -86,6 +86,7 @@ public class Terminal {
         // Create Picocli CommandLine with root command
         LuCLI rootCommand = new LuCLI();
         picocliCommandLine = new CommandLine(rootCommand);
+        picocliCommandLine.setExpandAtFiles(false);
 
         // Attach internal file system commands (ls, cd, etc.) via FileSystemCommands,
         // so that they participate in Picocli help and documentation while still

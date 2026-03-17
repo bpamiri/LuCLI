@@ -2,9 +2,11 @@ package org.lucee.lucli;
 
 import java.io.File;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -458,6 +460,7 @@ public class LuCLI implements Callable<Integer> {
         
         // Create Picocli CommandLine with our main command
         CommandLine cmd = new CommandLine(new LuCLI());
+        cmd.setExpandAtFiles(false);
         
         // Configure output streams
         cmd.setOut(new PrintWriter(System.out, true));
@@ -1011,6 +1014,7 @@ public class LuCLI implements Callable<Integer> {
         org.lucee.lucli.ExternalCommandProcessor externalCommandProcessor =
             new org.lucee.lucli.ExternalCommandProcessor(commandProcessor, commandProcessor.getSettings());
         CommandLine picocli = new CommandLine(new org.lucee.lucli.LuCLI());
+        picocli.setExpandAtFiles(false);
 
         StringOutput stringOutput = StringOutput.getInstance();
         boolean assertionFailed = false;
@@ -1152,9 +1156,18 @@ public class LuCLI implements Callable<Integer> {
 
             // Apply StringOutput placeholder processing
             String processedLine = stringOutput.process(lineWithSecrets);
+            ScriptOutputRedirection redirection;
+            try {
+                redirection = parseScriptOutputRedirection(processedLine);
+            } catch (IllegalArgumentException e) {
+                StringOutput.Quick.error("Script redirection syntax error: " + e.getMessage());
+                continue;
+            }
+
+            String commandToRun = redirection == null ? processedLine : redirection.commandLine;
 
             // Parse command into parts using the same parser as the terminal
-            String[] parts = commandProcessor.parseCommand(processedLine);
+            String[] parts = commandProcessor.parseCommand(commandToRun);
             if (parts.length == 0) {
                 continue;
             }
@@ -1163,30 +1176,53 @@ public class LuCLI implements Callable<Integer> {
 
             // Built-in testing/assertion command: assert <actual> <expected>
             if ("assert".equals(command)) {
+                String assertOutput;
                 if (parts.length < 3) {
+                    assertOutput = "❌ assert: usage: assert <actual> <expected>";
                     StringOutput.Quick.error("assert: usage: assert <actual> <expected>");
                 } else {
                     String actual = parts[1];
                     String expected = parts[2];
 
                     if (actual.equals(expected)) {
-                        System.out.println("✅ assert passed: expected '" + expected + "'");
+                        assertOutput = "✅ assert passed: expected '" + expected + "'";
                     } else {
-                        System.out.println("❌ assert failed: expected '" + expected + "' but got '" + actual + "'");
+                        assertOutput = "❌ assert failed: expected '" + expected + "' but got '" + actual + "'";
                         assertionFailed = true;
                     }
+                }
+
+                if (redirection != null) {
+                    try {
+                        writeScriptRedirectOutput(redirection, assertOutput, commandProcessor);
+                    } catch (Exception e) {
+                        StringOutput.Quick.error("Error writing redirected output to '" + redirection.targetPath + "': " + e.getMessage());
+                        debugStack(e);
+                    }
+                } else {
+                    System.out.println(assertOutput);
                 }
                 continue;
             }
 
             // Delegate all other commands to the shared dispatcher
             String result = executeLucliScriptCommand(
-                processedLine,
+                commandToRun,
                 commandProcessor,
                 externalCommandProcessor,
                 picocli,
                 true
             );
+
+            if (redirection != null) {
+                try {
+                    writeScriptRedirectOutput(redirection, result, commandProcessor);
+                } catch (Exception e) {
+                    StringOutput.Quick.error("Error writing redirected output to '" + redirection.targetPath + "': " + e.getMessage());
+                    debugStack(e);
+                }
+                continue;
+            }
 
             if(result != null && !result.trim().isEmpty()) {
                 recordLucliResult(result);
@@ -1199,6 +1235,132 @@ public class LuCLI implements Callable<Integer> {
 
         // Scripts are best-effort; fail overall if any assertion failed
         return assertionFailed ? 1 : 0;
+    }
+
+    static ScriptOutputRedirection parseScriptOutputRedirection(String line) {
+        if (line == null || line.isBlank()) {
+            return null;
+        }
+
+        boolean inSingleQuotes = false;
+        boolean inDoubleQuotes = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+
+            if (ch == '\'' && !inDoubleQuotes) {
+                inSingleQuotes = !inSingleQuotes;
+                continue;
+            }
+            if (ch == '"' && !inSingleQuotes) {
+                inDoubleQuotes = !inDoubleQuotes;
+                continue;
+            }
+
+            if (ch != '>' || inSingleQuotes || inDoubleQuotes) {
+                continue;
+            }
+
+            boolean append = (i + 1 < line.length() && line.charAt(i + 1) == '>');
+            int operatorLength = append ? 2 : 1;
+            String commandPart = line.substring(0, i).trim();
+            String targetPart = line.substring(i + operatorLength).trim();
+
+            if (commandPart.isEmpty()) {
+                throw new IllegalArgumentException("missing command before output redirection");
+            }
+            if (targetPart.isEmpty()) {
+                throw new IllegalArgumentException("missing file path after output redirection");
+            }
+
+            String normalizedTarget = unquoteScriptRedirectionTarget(targetPart);
+            if (normalizedTarget == null || normalizedTarget.isBlank()) {
+                throw new IllegalArgumentException("missing file path after output redirection");
+            }
+
+            return new ScriptOutputRedirection(commandPart, normalizedTarget, append);
+        }
+        return null;
+    }
+
+    private static void writeScriptRedirectOutput(
+        ScriptOutputRedirection redirection,
+        String commandOutput,
+        org.lucee.lucli.CommandProcessor commandProcessor
+    ) throws Exception {
+        Path outputPath = commandProcessor
+            .getFileSystemState()
+            .resolvePath(redirection.targetPath)
+            .toAbsolutePath()
+            .normalize();
+
+        Path parent = outputPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
+        String content = commandOutput == null ? "" : commandOutput.trim();
+        if (!content.isEmpty()) {
+            content = content + System.lineSeparator();
+        }
+
+        if (redirection.append) {
+            Files.writeString(
+                outputPath,
+                content,
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND
+            );
+            return;
+        }
+
+        Files.writeString(
+            outputPath,
+            content,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING,
+            StandardOpenOption.WRITE
+        );
+    }
+
+    private static String unquoteScriptRedirectionTarget(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() >= 2) {
+            char first = trimmed.charAt(0);
+            char last = trimmed.charAt(trimmed.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                return trimmed.substring(1, trimmed.length() - 1);
+            }
+        }
+        return trimmed;
+    }
+
+    static final class ScriptOutputRedirection {
+        final String commandLine;
+        final String targetPath;
+        final boolean append;
+
+        ScriptOutputRedirection(String commandLine, String targetPath, boolean append) {
+            this.commandLine = commandLine;
+            this.targetPath = targetPath;
+            this.append = append;
+        }
     }
 //  ExecFile, ExecLine, ExecVar, ExecEval
     

@@ -430,6 +430,16 @@ package-app
 deploy-to-staging
 ```
 
+`.lucli` scripts also support output redirection for command/module output:
+
+```bash
+# overwrite file
+my-module generate > ./out/report.txt
+
+# append to file
+my-module stats >> ./out/report.txt
+```
+
 ## Exit Codes
 
 LuCLI follows standard Unix exit code conventions:
