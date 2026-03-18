@@ -641,22 +641,31 @@ public class LuceeScriptEngine {
     }
 
     private void setupScriptContext(ScriptEngine engine, String scriptFile, String[] scriptArgs) throws IOException {
+        if (scriptArgs == null) {
+            scriptArgs = new String[0];
+        }
+        if (scriptFile == null) {
+            scriptFile = "";
+        }
 
         // Bindings bindings = engine.createBindings();
         // Set current working directory
         engine.put("__cwd", System.getProperty("user.dir"));
         // Set script file information
         engine.put("__scriptFile", scriptFile);
-        engine.put("__scriptPath", Paths.get(scriptFile).toAbsolutePath().toString());
+        engine.put("__scriptPath", scriptFile.isEmpty() ? "" : Paths.get(scriptFile).toAbsolutePath().toString());
         
         // Handle case where file is in current directory (getParent() returns null)
-        Path parent = Paths.get(scriptFile).getParent();
+        Path parent = scriptFile.isEmpty() ? null : Paths.get(scriptFile).getParent();
         String scriptDir = parent != null ? parent.toAbsolutePath().toString() : System.getProperty("user.dir");
         engine.put("__scriptDir", scriptDir);
         
         // Set arguments
         engine.put("__arguments", scriptArgs);
         engine.put("__argumentCount", scriptArgs.length);
+        engine.put(BuiltinVariableManager.LEGACY_ARGV, BuiltinVariableManager.createLegacyArgv(scriptFile, scriptArgs));
+        engine.put(BuiltinVariableManager.LEGACY_ARGS, BuiltinVariableManager.createLegacyArgsStruct(scriptFile, scriptArgs));
+        engine.put(BuiltinVariableManager.NAMED_ARGUMENTS, BuiltinVariableManager.createNamedArgumentMap(scriptArgs));
         
         // Set individual arguments for easy access (similar to CGI.argv)
         for (int i = 0; i < scriptArgs.length; i++) {
@@ -693,6 +702,7 @@ public class LuceeScriptEngine {
             System.out.println("Script context variables set:");
             System.out.println("  __scriptFile: " + scriptFile);
             System.out.println("  __arguments: " + Arrays.toString(scriptArgs));
+            System.out.println("  ARGS: " + BuiltinVariableManager.createLegacyArgsStruct(scriptFile, scriptArgs));
             System.out.println("  __lucliHome: " + lucliHome);
         }
     }

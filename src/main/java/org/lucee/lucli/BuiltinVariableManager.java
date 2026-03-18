@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import javax.script.Bindings;
@@ -27,6 +28,9 @@ public class BuiltinVariableManager {
     public static final String SCRIPT_DIR = "__scriptDir";
     public static final String ARGUMENTS = "__arguments";
     public static final String ARGUMENT_COUNT = "__argumentCount";
+    public static final String LEGACY_ARGS = "ARGS";
+    public static final String LEGACY_ARGV = "ARGV";
+    public static final String NAMED_ARGUMENTS = "__namedArguments";
     public static final String ENV = "__env";
     public static final String SYSTEM_PROPS = "__systemProps";
     public static final String LUCLI_HOME = "__lucliHome";
@@ -124,9 +128,18 @@ public class BuiltinVariableManager {
         // Set arguments
         variables.put(ARGUMENTS, scriptArgs);
         variables.put(ARGUMENT_COUNT, scriptArgs.length);
+        variables.put(LEGACY_ARGV, createLegacyArgv(scriptFile, scriptArgs));
+        variables.put(LEGACY_ARGS, createLegacyArgsStruct(scriptFile, scriptArgs));
+        variables.put(NAMED_ARGUMENTS, createNamedArgumentMap(scriptArgs));
         
-        // Environment variables
-        variables.put(ENV, System.getenv());
+        // Environment variables.
+        // For .lucli script execution, include dynamic values from LuCLI.scriptEnvironment
+        // (e.g., set FOO=bar / source .env) layered over the process environment.
+        Map<String, String> mergedEnv = new HashMap<>(System.getenv());
+        if (LuCLI.scriptEnvironment != null && !LuCLI.scriptEnvironment.isEmpty()) {
+            mergedEnv.putAll(LuCLI.scriptEnvironment);
+        }
+        variables.put(ENV, mergedEnv);
         
         // System properties
         variables.put(SYSTEM_PROPS, System.getProperties());
@@ -142,6 +155,105 @@ public class BuiltinVariableManager {
         variables.put(CURRENT_DIR, System.getProperty("user.dir"));
         
         return variables;
+    }
+
+    /**
+     * Create legacy ARGV-style array with script name first, followed by raw CLI args.
+     */
+    public static String[] createLegacyArgv(String scriptFile, String[] scriptArgs) {
+        if (scriptArgs == null) {
+            scriptArgs = new String[0];
+        }
+
+        int offset = (scriptFile != null && !scriptFile.isEmpty()) ? 1 : 0;
+        String[] argv = new String[scriptArgs.length + offset];
+        int idx = 0;
+        if (offset == 1) {
+            argv[idx++] = scriptFile;
+        }
+        for (String arg : scriptArgs) {
+            argv[idx++] = arg;
+        }
+        return argv;
+    }
+
+    /**
+     * Create named argument map from CLI args. Supports key=value, --flag, and --no-flag.
+     */
+    public static Map<String, String> createNamedArgumentMap(String[] scriptArgs) {
+        Map<String, String> named = new LinkedHashMap<>();
+        if (scriptArgs == null) {
+            return named;
+        }
+
+        for (String arg : scriptArgs) {
+            if (arg == null) {
+                continue;
+            }
+
+            int equalsIndex = arg.indexOf('=');
+            if (equalsIndex > 0) {
+                String rawKey = arg.substring(0, equalsIndex).trim();
+                String value = arg.substring(equalsIndex + 1);
+                String normalizedKey = normalizeArgumentKey(rawKey);
+                if (!normalizedKey.isEmpty()) {
+                    named.put(normalizedKey, value);
+                }
+                continue;
+            }
+
+            if (arg.startsWith("--no-") && arg.length() > 5) {
+                String normalizedKey = normalizeArgumentKey(arg.substring(5));
+                if (!normalizedKey.isEmpty()) {
+                    named.put(normalizedKey, "false");
+                }
+                continue;
+            }
+
+            if (arg.startsWith("--") && arg.length() > 2) {
+                String normalizedKey = normalizeArgumentKey(arg.substring(2));
+                if (!normalizedKey.isEmpty()) {
+                    named.put(normalizedKey, "true");
+                }
+            }
+        }
+
+        return named;
+    }
+
+    /**
+     * Create legacy ARGS struct:
+     * - numeric keys (1-based) for positional compatibility
+     * - named keys for key=value style access (ARGS["name"])
+     */
+    public static Map<String, Object> createLegacyArgsStruct(String scriptFile, String[] scriptArgs) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        String[] argv = createLegacyArgv(scriptFile, scriptArgs);
+        for (int i = 0; i < argv.length; i++) {
+            args.put(String.valueOf(i + 1), argv[i]);
+        }
+
+        Map<String, String> named = createNamedArgumentMap(scriptArgs);
+        for (Map.Entry<String, String> entry : named.entrySet()) {
+            args.put(entry.getKey(), entry.getValue());
+        }
+
+        return args;
+    }
+
+    private static String normalizeArgumentKey(String key) {
+        if (key == null) {
+            return "";
+        }
+
+        String normalized = key.trim();
+        if (normalized.startsWith("--")) {
+            normalized = normalized.substring(2);
+        } else if (normalized.startsWith("-")) {
+            normalized = normalized.substring(1);
+        }
+
+        return normalized.trim();
     }
     
     /**
@@ -180,7 +292,8 @@ public class BuiltinVariableManager {
                 script.append(varName).append(" = ").append(value).append(";\n");
             } else {
                 // For complex objects like Maps, we'll serialize them or handle them specially
-                if (varName.equals(ENV) || varName.equals(SYSTEM_PROPS)) {
+                if (varName.equals(ENV) || varName.equals(SYSTEM_PROPS) || varName.equals(LEGACY_ARGS)
+                        || varName.equals(NAMED_ARGUMENTS)) {
                     // These are handled specially by the ScriptEngine bindings
                     script.append("// ").append(varName).append(" is available as a complex object\n");
                 } else {
