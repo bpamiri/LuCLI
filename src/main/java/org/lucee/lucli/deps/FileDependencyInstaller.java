@@ -60,7 +60,7 @@ public class FileDependencyInstaller implements DependencyInstaller {
         }
 
         Path installPath = projectDir.resolve(dep.getInstallPath());
-        StringOutput.Quick.info("  Installing " + dep.getName() + " from local path...");
+        StringOutput.Quick.download("  Installing " + dep.getName() + " from local path...");
 
         // Remove existing installation if present
         deleteExisting(installPath);

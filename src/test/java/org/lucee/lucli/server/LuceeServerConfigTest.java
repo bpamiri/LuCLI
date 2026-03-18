@@ -845,12 +845,47 @@ public class LuceeServerConfigTest {
                 "Stale lock installPath should not override the real dependencies/testbox location");
     }
 
+    @Test
+    void resolveConfigurationNode_generatesDeclaredDependencyMappingFromExplicitMappingAndInstallPath() throws IOException {
+        String json = """
+            {
+              "name": "dep-map-explicit-test",
+              "dependencies": {
+                "my-framework": {
+                  "type": "cfml",
+                  "version": "4.3.0",
+                  "source": "git",
+                  "url": "https://github.com/example/my-framework.git",
+                  "installPath": "vendor/my-framework",
+                  "mapping": "/framework"
+                }
+              }
+            }
+            """;
+        Files.writeString(tempDir.resolve("lucee.json"), json);
+
+        LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(tempDir);
+        com.fasterxml.jackson.databind.JsonNode resolved =
+                LuceeServerConfig.resolveConfigurationNode(config, tempDir);
+
+        assertNotNull(resolved);
+        com.fasterxml.jackson.databind.JsonNode mapping = resolved.path("mappings").path("/framework/");
+        assertTrue(mapping.isObject(), "Expected declared dependency mapping /framework/ to be generated");
+
+        String expectedPhysicalPath = tempDir.resolve("vendor")
+                .resolve("my-framework")
+                .toAbsolutePath()
+                .normalize()
+                .toString();
+        assertEquals(expectedPhysicalPath, mapping.path("physical").asText());
+    }
+
     // ===================
     // CFConfig Path Tests
     // ===================
 
     @Test
-    void writeCfConfigIfPresent_writesToNestedLuceeServerContextForTomcatBasedRuntimes() throws IOException {
+    void writeCfConfigIfPresent_writesToLuceeServerContextForTomcatBasedRuntimes() throws IOException {
         LuceeServerConfig.ServerConfig config = new LuceeServerConfig.ServerConfig();
         config.configuration = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readTree("{\"inspectTemplate\":\"once\"}");
@@ -862,15 +897,44 @@ public class LuceeServerConfigTest {
 
         Path expectedPath = serverInstanceDir
                 .resolve("lucee-server")
-                .resolve("lucee-server")
                 .resolve("context")
                 .resolve(".CFConfig.json");
         Path legacyPath = serverInstanceDir
                 .resolve("lucee-server")
+                .resolve("lucee-server")
+                .resolve("context")
+                .resolve(".CFConfig.json");
+        assertTrue(Files.exists(expectedPath), "Expected .CFConfig.json at canonical Lucee server context path");
+        assertFalse(Files.exists(legacyPath), "Legacy nested .CFConfig.json path should not be written");
+    }
+
+    @Test
+    void writeCfConfigIfPresent_readsLegacyNestedPathAndWritesCanonicalPath() throws IOException {
+        LuceeServerConfig.ServerConfig config = new LuceeServerConfig.ServerConfig();
+        config.configuration = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree("{\"inspectTemplate\":\"always\"}");
+
+        Path serverInstanceDir = tempDir.resolve("server-instance-legacy");
+        Path legacyPath = serverInstanceDir
+                .resolve("lucee-server")
+                .resolve("lucee-server")
+                .resolve("context")
+                .resolve(".CFConfig.json");
+        Files.createDirectories(legacyPath.getParent());
+        Files.writeString(legacyPath, "{\"existing\":\"value\"}");
+
+        LuceeServerConfig.writeCfConfigIfPresent(config, tempDir, serverInstanceDir);
+
+        Path canonicalPath = serverInstanceDir
+                .resolve("lucee-server")
                 .resolve("context")
                 .resolve(".CFConfig.json");
 
-        assertTrue(Files.exists(expectedPath), "Expected .CFConfig.json at nested Lucee server context path");
+        assertTrue(Files.exists(canonicalPath), "Expected canonical .CFConfig.json to be written");
+        com.fasterxml.jackson.databind.JsonNode written =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(canonicalPath.toFile());
+        assertEquals("value", written.path("existing").asText(), "Expected legacy existing config to be merged");
+        assertEquals("always", written.path("inspectTemplate").asText(), "Expected new config to override/add values");
         assertFalse(Files.exists(legacyPath), "Legacy non-nested .CFConfig.json path should not be written");
     }
 

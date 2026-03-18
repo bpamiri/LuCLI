@@ -2345,13 +2345,18 @@ public class LuceeServerConfig {
         }
         
         Path cfConfigPath = resolveCfConfigPath(config, serverInstanceDir);
-        
-        if (!Files.exists(cfConfigPath)) {
-            // No existing file – nothing to merge.
-            return cfConfig;
+        Path existingConfigPath = cfConfigPath;
+
+        if (!Files.exists(existingConfigPath)) {
+            Path legacyCfConfigPath = resolveLegacyCfConfigPath(config, serverInstanceDir);
+            if (legacyCfConfigPath == null || !Files.exists(legacyCfConfigPath)) {
+                // No existing file – nothing to merge.
+                return cfConfig;
+            }
+            existingConfigPath = legacyCfConfigPath;
         }
-        
-        JsonNode existing = objectMapper.readTree(cfConfigPath.toFile());
+
+        JsonNode existing = objectMapper.readTree(existingConfigPath.toFile());
         if (existing == null || existing.isNull()) {
             return cfConfig;
         }
@@ -2385,8 +2390,8 @@ public class LuceeServerConfig {
             return; // Nothing to write
         }
         Path cfConfigPath = resolveCfConfigPath(config, serverInstanceDir);
-        Path contextDir = cfConfigPath.getParent();
-        Files.createDirectories(contextDir);
+        Path canonicalContextDir = cfConfigPath.getParent();
+        Files.createDirectories(canonicalContextDir);
 
         // Only log array overrides when we actually merged into an existing file.
         if (!arrayPaths.isEmpty() && Files.exists(cfConfigPath)) {
@@ -2395,16 +2400,47 @@ public class LuceeServerConfig {
         }
 
         objectMapper.writeValue(cfConfigPath.toFile(), finalConfig);
+
+        // Cleanup legacy nested location when present to avoid diverging CFConfig state.
+        Path legacyCfConfigPath = resolveLegacyCfConfigPath(config, serverInstanceDir);
+        if (legacyCfConfigPath != null
+                && !legacyCfConfigPath.equals(cfConfigPath)
+                && Files.exists(legacyCfConfigPath)) {
+            try {
+                Files.deleteIfExists(legacyCfConfigPath);
+                Path legacyContextDir = legacyCfConfigPath.getParent();
+                if (legacyContextDir != null && isDirectoryEmpty(legacyContextDir)) {
+                    Files.deleteIfExists(legacyContextDir);
+                }
+                Path legacyNestedLuceeServerDir = legacyContextDir != null ? legacyContextDir.getParent() : null;
+                if (legacyNestedLuceeServerDir != null && isDirectoryEmpty(legacyNestedLuceeServerDir)) {
+                    Files.deleteIfExists(legacyNestedLuceeServerDir);
+                }
+            } catch (IOException e) {
+                System.err.println("Warning: Failed to clean legacy nested .CFConfig.json path: " + e.getMessage());
+            }
+        }
     }
 
     /**
      * Resolve the effective .CFConfig.json path for the given runtime.
      *
-     * <p>Tomcat-based runtimes (lucee-express/tomcat) expect the server
-     * context under lucee-server/lucee-server/context/.CFConfig.json.
-     * Jetty uses lucee-server/context/.CFConfig.json.</p>
+     * <p>All supported runtimes write the effective CFConfig at
+     * lucee-server/context/.CFConfig.json under the server instance directory.</p>
      */
     private static Path resolveCfConfigPath(ServerConfig config, Path serverInstanceDir) {
+
+        return serverInstanceDir
+                .resolve("lucee-server")
+                .resolve("context")
+                .resolve(".CFConfig.json");
+    }
+
+    /**
+     * Legacy CFConfig path used by older LuCLI builds for Tomcat-based runtimes.
+     * This is read-only fallback to preserve existing config until rewritten.
+     */
+    private static Path resolveLegacyCfConfigPath(ServerConfig config, Path serverInstanceDir) {
         String runtimeType = "lucee-express";
         if (config != null
                 && config.runtime != null
@@ -2414,10 +2450,7 @@ public class LuceeServerConfig {
         }
 
         if ("jetty".equalsIgnoreCase(runtimeType)) {
-            return serverInstanceDir
-                    .resolve("lucee-server")
-                    .resolve("context")
-                    .resolve(".CFConfig.json");
+            return null;
         }
 
         return serverInstanceDir
@@ -2425,6 +2458,15 @@ public class LuceeServerConfig {
                 .resolve("lucee-server")
                 .resolve("context")
                 .resolve(".CFConfig.json");
+    }
+
+    private static boolean isDirectoryEmpty(Path directory) throws IOException {
+        if (directory == null || !Files.isDirectory(directory)) {
+            return false;
+        }
+        try (java.util.stream.Stream<Path> stream = Files.list(directory)) {
+            return !stream.findFirst().isPresent();
+        }
     }
 
     /**

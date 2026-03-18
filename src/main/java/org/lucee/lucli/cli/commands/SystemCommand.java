@@ -41,7 +41,6 @@ import picocli.CommandLine.Parameters;
 public class SystemCommand implements Callable<Integer> {
     private static final Path DEFAULT_CFCONFIG_RELATIVE_PATH = Paths.get(
         "lucee-server",
-        "lucee-server",
         "context",
         ".CFConfig.json"
     );

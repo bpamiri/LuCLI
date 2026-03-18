@@ -3,11 +3,15 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **One-Shot Server Overrides No Longer Persist to `lucee.json`:** `lucli server start` / `lucli server run` now apply invocation overrides (including bare `key=value`, `--port`, `--webroot`, and `--enable-lucee` / `--disable-lucee`) in memory for that run only, instead of mutating your project config file.
+- **CFConfig Path Normalization + Legacy Compatibility:** Standardized server CFConfig handling to `~/.lucli/<server>/context/.CFConfig.json` (removing the duplicated `lucee-server` path segment), while still reading legacy locations when present and cleaning up old nested files/directories after migration.
 - **Script Argument Variables (`ARGS`, `ARGV`, `__namedArguments`):** CFML scripts (`.cfs`, `.cfm`) now have access to `ARGS` (a struct with both numeric positional keys and named `key=value` entries), `ARGV` (an array with the script filename as element 0 followed by raw args), and `__namedArguments` (a map of only the named key=value arguments). The `__env` / `ENV` binding also now includes variables set via `set` in the parent `.lucli` script.
 - **`set` Variable Propagation to External Commands:** Variables defined via `set VAR=value` in `.lucli` scripts are now merged into the environment of external child processes (e.g. shell commands, `env`, `curl`). Previously they were only visible to the embedded CFML engine context.
 - **Fix: `lucli module init` Wizard Error:** Fixed an interactive prompt issue where module creation could fail with `❌ Error: No line found` after entering module details.
 - **AI Config Quiet Mode:** Added `--quiet` to `lucli ai config add` to suppress printing imported config payload output, making CI logs safer.
+
 ## 0.2.23
+
  - **Bootstrap Installers + Download UX:** Added cross-platform bootstrap installers (`install.sh` and `install.ps1`) for one-line install flows (`curl ... | sh` and `irm ... | iex`), published as release assets, and documented in README/install docs. Updated the download page with copyable install commands, pinned-version examples, and automatic pinned-version updates from the latest release (with release workflow stamping).
  - **Adding JQ and Curl to docker image**  - this allows us to use common tools alongside with lucli in pipelines
  - **Fix: Module Install with `--rev` on Branch Names:** Fixed `modules install --rev <branch>` failing when git is not available. You can now install modules from both tags and branches in non-git environments.

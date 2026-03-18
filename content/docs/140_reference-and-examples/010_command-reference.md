@@ -50,7 +50,7 @@ lucli system inspect [--lucee] [--path /path/to/.CFConfig.json]
 
 **Notes:**
 - `--lucee` pretty-prints the Lucee CFConfig JSON.
-- Default CFConfig path is `~/.lucli/lucee-server/lucee-server/context/.CFConfig.json`.
+- Default CFConfig path is `~/.lucli/lucee-server/context/.CFConfig.json`.
 - Use `--path` to inspect a different `.CFConfig.json` file.
 
 #### `lucli system paths`
