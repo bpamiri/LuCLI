@@ -23,6 +23,9 @@ else
     exit 1
 fi
 
+if [[ "${CI:-}" == "true" && -z "${TERM:-}" ]]; then
+    export TERM="dumb"
+fi
 if [[ -z "${NO_JUNIT_XML:-}" ]]; then
     BATS_JUNIT_XML_OUTPUT="${BATS_JUNIT_XML_OUTPUT:-${JUNIT_XML_OUTPUT:-test-bats-results.xml}}"
 else
@@ -52,9 +55,9 @@ if [[ -n "${BATS_JUNIT_XML_OUTPUT}" ]]; then
 
     set +e
     if [[ -n "${TEST_FILTER:-}" ]]; then
-        "${BATS_BIN}" -F pretty --report-formatter junit --output "${BATS_REPORT_DIR}" --filter "${TEST_FILTER}" "$@" "${BATS_DIR}"
+        "${BATS_BIN}" -F tap --report-formatter junit --output "${BATS_REPORT_DIR}" --filter "${TEST_FILTER}" "$@" "${BATS_DIR}"
     else
-        "${BATS_BIN}" -F pretty --report-formatter junit --output "${BATS_REPORT_DIR}" "$@" "${BATS_DIR}"
+        "${BATS_BIN}" -F tap --report-formatter junit --output "${BATS_REPORT_DIR}" "$@" "${BATS_DIR}"
     fi
     BATS_EXIT_CODE=$?
     set -e

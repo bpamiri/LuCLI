@@ -23,3 +23,4 @@ Append new entries at the bottom under the appropriate date/session.
 - In strict shell scripts (`set -euo pipefail`), avoid `sdk env` in hooks; prefer parsing `.sdkmanrc` and exporting `JAVA_HOME/PATH` directly to prevent silent early exits from SDKMAN shell functions.
 - CI runners do not guarantee BATS availability; explicitly install it in workflow steps (`apt-get install bats` on Linux, `brew install bats-core` on macOS) before invoking `tests/test-bats.sh`.
 - When temporarily skipping unstable migration tests, prefer method-level `@Disabled("reason")` with specific scope and rationale rather than broad class-level disables.
+- In CI, prefer `bats -F tap --report-formatter junit` (and set `TERM=dumb` when missing) to avoid `tput`/broken-pipe formatter failures that can occur with `-F pretty` in non-interactive environments.
