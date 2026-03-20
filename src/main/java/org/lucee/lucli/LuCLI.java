@@ -185,6 +185,7 @@ public class LuCLI implements Callable<Integer> {
     public static String currentEnvironment = null;
     public static String envFilePath = null;
     private static boolean lucliScript = false;
+    private static volatile Path runtimeCwd = null;
     
     public static Map<String, String> scriptEnvironment = new HashMap<>(System.getenv());
     
@@ -426,6 +427,42 @@ public class LuCLI implements Callable<Integer> {
         
         return null;
     }
+
+    /**
+     * Set explicit runtime CWD used by LuCLI-managed execution contexts.
+     */
+    public static void setRuntimeCwd(Path cwd) {
+        if (cwd == null) {
+            runtimeCwd = null;
+            return;
+        }
+        runtimeCwd = cwd.toAbsolutePath().normalize();
+    }
+
+    /**
+     * Return explicit runtime CWD override if set; otherwise null.
+     */
+    public static Path getRuntimeCwd() {
+        return runtimeCwd;
+    }
+
+    /**
+     * Clear explicit runtime CWD override.
+     */
+    public static void clearRuntimeCwd() {
+        runtimeCwd = null;
+    }
+
+    /**
+     * Resolve effective runtime CWD, falling back to JVM user.dir.
+     */
+    public static Path getEffectiveRuntimeCwd() {
+        Path cwd = runtimeCwd;
+        if (cwd != null) {
+            return cwd;
+        }
+        return Paths.get(System.getProperty("user.dir")).toAbsolutePath().normalize();
+    }
     
     // ====================
     // Main Entry Point
@@ -458,6 +495,12 @@ public class LuCLI implements Callable<Integer> {
     public static int executeInProcess(String[] args) throws Exception {
         // Suppress JLine "Unable to create a system terminal" warning
         java.util.logging.Logger.getLogger("org.jline").setLevel(java.util.logging.Level.SEVERE);
+
+        // For one-shot in-process invocations, default runtime CWD to JVM user.dir
+        // unless a session flow has already provided an explicit value.
+        if (runtimeCwd == null) {
+            setRuntimeCwd(Paths.get(System.getProperty("user.dir")));
+        }
 
         // Pre-process: if first arg is a module name and --help/-h is present,
         // rewrite to "modules run <module> --help" so picocli routes to
@@ -1052,6 +1095,7 @@ public class LuCLI implements Callable<Integer> {
 
         // Set up a lightweight command environment similar to Terminal.dispatchCommand
         org.lucee.lucli.CommandProcessor commandProcessor = new org.lucee.lucli.CommandProcessor();
+        setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
         org.lucee.lucli.ExternalCommandProcessor externalCommandProcessor =
             new org.lucee.lucli.ExternalCommandProcessor(commandProcessor, commandProcessor.getSettings());
         CommandLine picocli = new CommandLine(new org.lucee.lucli.LuCLI());
@@ -1550,6 +1594,7 @@ public class LuCLI implements Callable<Integer> {
         // into the script, strip the leading "lucli" so we don't recursively
         // invoke LuCLI from within itself.
         String scriptLine = processedLine == null ? "" : processedLine.trim();
+        setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
 
         // Should be fairly unreachable since this is pre-checked, but guard against empty lines
         if(scriptLine.trim().isEmpty()) {
@@ -1658,6 +1703,7 @@ public class LuCLI implements Callable<Integer> {
                         System.setOut(new java.io.PrintStream(baos));
                         System.setErr(new java.io.PrintStream(baos));
                         picocli.execute(parts); // Picocli writes directly to System.out/err
+                        setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     } finally {
                         System.setOut(originalOut);
                         System.setErr(originalErr);
@@ -1669,6 +1715,7 @@ public class LuCLI implements Callable<Integer> {
                     return captured;
                 } else {
                     picocli.execute(parts);
+                    setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     return "";
                 }
             }
@@ -1688,6 +1735,7 @@ public class LuCLI implements Callable<Integer> {
                         System.setOut(new java.io.PrintStream(baos));
                         System.setErr(new java.io.PrintStream(baos));
                         org.lucee.lucli.modules.ModuleCommand.executeModuleByName(command, moduleArgs);
+                        setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     } finally {
                         System.setOut(originalOut);
                         System.setErr(originalErr);
@@ -1699,6 +1747,7 @@ public class LuCLI implements Callable<Integer> {
                     return captured;
                 } else {
                     org.lucee.lucli.modules.ModuleCommand.executeModuleByName(command, moduleArgs);
+                    setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     return "";
                 }
             }
@@ -1706,6 +1755,7 @@ public class LuCLI implements Callable<Integer> {
             // 3) File-system style commands (ls, cd, rm, etc.)
             if (isFileSystemStyleCommand(command)) {
                 String fsResult = commandProcessor.executeCommand(scriptLine);
+                setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                 if (fsResult != null) {
                     recordLucliResult(fsResult);
                 }
@@ -1721,6 +1771,7 @@ public class LuCLI implements Callable<Integer> {
 
             // 4) Fallback to external command processor (git, echo, etc.)
             String extResult = externalCommandProcessor.executeCommand(scriptLine);
+            setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
             if (extResult != null) {
                 recordLucliResult(extResult);
             }

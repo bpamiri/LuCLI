@@ -103,6 +103,7 @@ public class BuiltinVariableManager {
      */
     public Map<String, Object> createBuiltinVariables(String scriptFile, String[] scriptArgs) throws IOException {
         Map<String, Object> variables = new HashMap<>();
+        Path effectiveCwd = LuCLI.getEffectiveRuntimeCwd();
         
         // Ensure we have empty array if no args provided
         if (scriptArgs == null) {
@@ -116,13 +117,13 @@ public class BuiltinVariableManager {
             
             // Handle case where file is in current directory (getParent() returns null)
             Path parent = Paths.get(scriptFile).getParent();
-            String scriptDir = parent != null ? parent.toAbsolutePath().toString() : System.getProperty("user.dir");
+            String scriptDir = parent != null ? parent.toAbsolutePath().toString() : effectiveCwd.toString();
             variables.put(SCRIPT_DIR, scriptDir);
         } else {
             // For interactive mode or when no script file is specified
             variables.put(SCRIPT_FILE, "");
             variables.put(SCRIPT_PATH, "");
-            variables.put(SCRIPT_DIR, System.getProperty("user.dir"));
+            variables.put(SCRIPT_DIR, effectiveCwd.toString());
         }
         
         // Set arguments
@@ -152,7 +153,7 @@ public class BuiltinVariableManager {
         variables.put(LUCLI_VERSION, LuCLI.getVersion());
         
         // Add current working directory
-        variables.put(CURRENT_DIR, System.getProperty("user.dir"));
+        variables.put(CURRENT_DIR, effectiveCwd.toString());
         
         return variables;
     }

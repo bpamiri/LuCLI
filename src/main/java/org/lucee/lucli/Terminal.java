@@ -82,6 +82,7 @@ public class Terminal {
         // Initialize command processor for terminal-specific commands
         commandProcessor = new CommandProcessor();
         externalCommandProcessor = new ExternalCommandProcessor(commandProcessor, commandProcessor.getSettings());
+        syncRuntimeCwdFromTerminalState();
         
         // Create Picocli CommandLine with root command
         LuCLI rootCommand = new LuCLI();
@@ -208,6 +209,7 @@ public class Terminal {
      */
     private static String dispatchCommand(String commandLine) {
         try {
+            syncRuntimeCwdFromTerminalState();
             // Normalize: if user types a full "lucli ..." command inside
             // the terminal, strip the leading "lucli" so we don't spawn
             // another LuCLI process from within an existing session.
@@ -269,7 +271,9 @@ public class Terminal {
             // Terminal-only commands (pwd, mkdir, etc.) that are not yet
             // wired through Picocli continue to delegate to CommandProcessor.
             if (isTerminalOnlyCommand(command)) {
-                return commandProcessor.executeCommand(effectiveLine);
+                String result = commandProcessor.executeCommand(effectiveLine);
+                syncRuntimeCwdFromTerminalState();
+                return result;
             }
             
             // Check if it's a module shortcut
@@ -280,7 +284,9 @@ public class Terminal {
             }
             
             // Fall back to external command processor
-            return externalCommandProcessor.executeCommand(effectiveLine);
+            String result = externalCommandProcessor.executeCommand(effectiveLine);
+            syncRuntimeCwdFromTerminalState();
+            return result;
             
         } catch (Exception e) {
             return WindowsSupport.Symbols.ERROR() + " Error: " + e.getMessage();
@@ -326,6 +332,7 @@ public class Terminal {
             
             // Execute through Picocli
             picocliCommandLine.execute(args);
+            syncRuntimeCwdFromTerminalState();
             
             // Get captured output
             // return baos.toString().trim();
@@ -346,7 +353,9 @@ public class Terminal {
      */
     private static String executeModule(String moduleName, String[] moduleArgs) {
         try {
+            syncRuntimeCwdFromTerminalState();
             ModuleCommand.executeModuleByName(moduleName, moduleArgs);
+            syncRuntimeCwdFromTerminalState();
             return ""; // Output already written directly via systemOutput()
         } catch (Exception e) {
             return WindowsSupport.Symbols.ERROR() + " Error executing module '" + moduleName + "': " + e.getMessage();
@@ -358,6 +367,7 @@ public class Terminal {
      */
     private static String executeCFML(String cfmlCode) {
         try {
+            syncRuntimeCwdFromTerminalState();
             // Initialize Lucee engine if not already done
             if (luceeEngine == null) {
                 if (LuCLI.verbose) {
@@ -530,5 +540,11 @@ public class Terminal {
         }
         
         return parts.toArray(new String[0]);
+    }
+
+    private static void syncRuntimeCwdFromTerminalState() {
+        if (commandProcessor != null) {
+            LuCLI.setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
+        }
     }
 }
