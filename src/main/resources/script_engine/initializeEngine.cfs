@@ -28,14 +28,14 @@ config = {
             "toplevel": false
 		}
     },
-    "componentMappings": [
-        {
-            "inspectTemplate": "once",
-            "physical": "#__cwd#",
-            "archive": "",
-            "virtual": "/cwd"
-        }
-    ]
+    // "componentMappings": [
+    //     {
+    //         "inspectTemplate": "once",
+    //         "physical": "#__cwd#",
+    //         "archive": "",
+    //         "virtual": "/"
+    //     }
+    // ]
 	// "systemErr": "org.lucee.lucli.LuCLIPrintWriter",
 	// "systemOut": "org.lucee.lucli.LuCLIPrintWriter"
 	// ,"generalErrorTemplate":"/lucee/templates/error/error-terminal.cfm"

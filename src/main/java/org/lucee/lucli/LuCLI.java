@@ -242,7 +242,9 @@ public class LuCLI implements Callable<Integer> {
         try {
             // Handle special version command
             if (luceeVersionRequested) {
-                showLuceeVersionNonInteractive();
+                String luceeVersion = LuceeScriptEngine.getInstance().getVersion();
+                StringOutput.Quick.info("Lucee Version: " + luceeVersion);
+                // showLuceeVersionNonInteractive();
                 return 0;
             }
 

@@ -94,9 +94,10 @@ public class LuceeScriptEngine {
         rootConfig.put("Mappings", mappings);
 
         engine.put("__cwdMappingConfig", rootConfig);
-        engine.eval(
-            "configImport(data=__cwdMappingConfig,password=request.SERVERADMINPASSWORD,type=\"server\",flushExistingData=false);"
-        );
+        // Removing as we dont need it if we use the right dotted path!
+        // engine.eval(
+        //     "configImport(data=__cwdMappingConfig,password=request.SERVERADMINPASSWORD,type=\"server\",flushExistingData=false);"
+        // );
         lastMappedCwd = cwd;
     }
 
@@ -620,7 +621,8 @@ public class LuceeScriptEngine {
             engine.put("verbose", LuCLI.verbose);
             engine.put("timing", LuCLI.timing);
             engine.put("timer", Timer.getInstance());
-            engine.put("componentPath", getDottedPathFromCWD(scriptFile));
+            String dottedComponentPath = getDottedPathFromCWD(scriptFile);
+            engine.put("componentPath", dottedComponentPath);
 
             // Script to run 
             String script = readScriptTemplate("/script_engine/executeComponentFromCWD.cfs");
@@ -636,7 +638,7 @@ public class LuceeScriptEngine {
                 if(isDebugMode()) {
                     e.printStackTrace();
                 }
-                throw new ScriptException("Error executing CFC '" + scriptFile +  "': " + e.getMessage());
+                throw new ScriptException("Error executing CFC '" + scriptFile +  "' (" + dottedComponentPath + "): " + e.getMessage());
             }
             Timer.stop("Executing CFC");
         

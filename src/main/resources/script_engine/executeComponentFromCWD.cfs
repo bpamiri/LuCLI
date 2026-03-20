@@ -5,7 +5,7 @@
 // out("subCommand: #subCommand#");
 // out("Creating component instance...");
 
-comp = createObject("component", __scriptPath);
+comp = createObject("component", componentPath);
 if (!isDefined("subCommand") || !len(trim(subCommand))) {
     subCommand = "main";
 }
