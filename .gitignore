@@ -37,3 +37,4 @@ tomcat_tests/
 test-results.xml
 out/
 Runtimes/
+server_test_*/

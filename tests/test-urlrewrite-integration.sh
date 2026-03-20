@@ -58,8 +58,8 @@ cleanup() {
     echo "  Removed test files"
 }
 
-# Set up cleanup on exit (but not on normal completion)
-trap 'cleanup' INT TERM
+# Set up cleanup on exit
+trap 'cleanup' EXIT INT TERM
 
 # Check prerequisites
 print_status "Checking URL rewrite test prerequisites..."
@@ -115,10 +115,12 @@ cat > index.cfm << 'EOF'
 <cfscript>
     // Simple router for testing URL rewrite functionality
     pathInfo = cgi.path_info ?: "";
-    
-    // Remove leading slash if present
-    if (left(pathInfo, 1) == "/") {
-        pathInfo = right(pathInfo, len(pathInfo) - 1);
+
+    // Normalize root and remove leading slash safely
+    if (pathInfo == "/") {
+        pathInfo = "";
+    } else if (left(pathInfo, 1) == "/") {
+        pathInfo = mid(pathInfo, 2, len(pathInfo) - 1);
     }
     
     // Default to "home" if path is empty
@@ -213,7 +215,8 @@ wait_count=0
 server_ready=false
 
 while [ $wait_count -lt $MAX_WAIT_TIME ]; do
-    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:$TEST_PORT/" 2>/dev/null | grep -q "200"; then
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$TEST_PORT/" 2>/dev/null || echo "000")
+    if [ "$http_code" != "000" ] && [ "$http_code" != "503" ]; then
         server_ready=true
         break
     fi
@@ -226,6 +229,11 @@ echo ""
 
 if [ "$server_ready" = false ]; then
     print_error "Server did not become ready in time"
+    print_status "Last few server log lines:"
+    SERVER_DIR="$HOME/.lucli/servers/$TEST_SERVER_NAME"
+    if [ -f "$SERVER_DIR/logs/catalina.out" ]; then
+        tail -n 30 "$SERVER_DIR/logs/catalina.out" || true
+    fi
     exit 1
 fi
 

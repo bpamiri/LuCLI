@@ -11,7 +11,7 @@ component {
         sayHello("Person");
 
       // Another comment
-        init();
+        // init();
     
     }
 

@@ -159,8 +159,10 @@ run_test() {
     
     _TOTAL_TESTS=$((_TOTAL_TESTS + 1))
     local output
+    set +e
     output=$(eval "$command" 2>&1)
     local actual_exit_code=$?
+    set -e
     local duration=$(($(date +%s) - start_time))
     
     if [ $actual_exit_code -eq $expected_exit_code ]; then
@@ -197,8 +199,10 @@ run_test_with_output() {
     
     _TOTAL_TESTS=$((_TOTAL_TESTS + 1))
     local output
+    set +e
     output=$(eval "$command" 2>&1)
     local exit_code=$?
+    set -e
     local duration=$(($(date +%s) - start_time))
     
     if [ $exit_code -eq 0 ] && echo "$output" | grep -q "$expected_pattern"; then
