@@ -79,21 +79,21 @@ public class LuceeScriptEngine {
         componentMapping.put("inspectTemplate", "once");
         componentMapping.put("physical", cwd.toString());
         componentMapping.put("archive", "");
-        componentMapping.put("virtual", "/cwd");
+        componentMapping.put("virtual", "/");
         java.util.List<Map<String, Object>> componentMappings = new java.util.ArrayList<>();
         componentMappings.add(componentMapping);
         rootConfig.put("componentMappings", componentMappings);
 
-        Map<String, Object> mappings = new HashMap<>();
-        Map<String, Object> cwdMapping = new HashMap<>();
-        cwdMapping.put("inspectTemplate", "auto");
-        cwdMapping.put("physical", cwd.toString());
-        cwdMapping.put("primary", "physical");
-        cwdMapping.put("toplevel", false);
-        mappings.put("/cwd", cwdMapping);
-        rootConfig.put("Mappings", mappings);
+        // Map<String, Object> mappings = new HashMap<>();
+        // Map<String, Object> cwdMapping = new HashMap<>();
+        // cwdMapping.put("inspectTemplate", "auto");
+        // cwdMapping.put("physical", cwd.toString());
+        // cwdMapping.put("primary", "physical");
+        // cwdMapping.put("toplevel", false);
+        // mappings.put("/", cwdMapping);
+        // rootConfig.put("Mappings", mappings);
 
-        engine.put("__cwdMappingConfig", rootConfig);
+        // engine.put("__cwdMappingConfig", rootConfig);
         // Removing as we dont need it if we use the right dotted path!
         // engine.eval(
         //     "configImport(data=__cwdMappingConfig,password=request.SERVERADMINPASSWORD,type=\"server\",flushExistingData=false);"
