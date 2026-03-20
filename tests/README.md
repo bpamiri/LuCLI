@@ -8,6 +8,12 @@ This directory contains integration and functional tests for LuCLI.
 # Run ALL tests (comprehensive + server integration)
 ./tests/test-all.sh
 
+# Run BATS smoke tests (parallel migration path, does not replace shell suites)
+./tests/test-bats.sh
+
+# Include BATS in aggregate runner (opt-in)
+RUN_BATS=true ./tests/test-all.sh
+
 # Skip comprehensive suite (faster)
 SKIP_COMPREHENSIVE=1 ./tests/test-all.sh
 
@@ -58,6 +64,7 @@ mvn clean test
 | `test.sh` | `RUN_COMPREHENSIVE=true` | Full 50+ test comprehensive suite (~2min) |
 | `test-server-cfml.sh` | `RUN_SERVER_TESTS=true` | Server lifecycle with CFML integration |
 | `test-urlrewrite-integration.sh` | `RUN_SERVER_TESTS=true` | URL rewriting framework support |
+| `test-bats.sh` | `TEST_FILTER=<pattern>` | BATS smoke tests (`tests/bats/`) for gradual migration |
 
 ### Utility/Supporting Tests
 | Script | Purpose | Status |
@@ -85,6 +92,12 @@ NO_JUNIT_XML=1 ./tests/test-all.sh
 
 # test.sh (comprehensive) writes to test-results.xml
 ./tests/test.sh
+
+# test-bats.sh writes to test-bats-results.xml by default
+./tests/test-bats.sh
+
+# Custom BATS JUnit XML output
+BATS_JUNIT_XML_OUTPUT=results/bats-results.xml ./tests/test-bats.sh
 ```
 
 ## Test Naming Convention
@@ -115,6 +128,26 @@ run_test "Expected failure" "java -jar target/lucli.jar --invalid" 1
 
 finish_test_suite
 ```
+
+### Using BATS (Incremental Migration)
+
+The BATS suite lives in `tests/bats/` and currently mirrors a safe subset of smoke and dry-run checks from `tests/test.sh`.
+
+```bash
+# Install bats-core (macOS)
+brew install bats-core
+
+# Run all BATS tests
+./tests/test-bats.sh
+
+# Filter BATS tests by name
+TEST_FILTER="dry-run" ./tests/test-bats.sh
+```
+
+Migration guidance:
+- Prefer converting deterministic tests first (`--help`, `--version`, dry-run output assertions)
+- Keep server lifecycle / long-running tests in existing shell suites until BATS parity is complete
+- Keep both paths running in CI during transition (do not remove existing shell suites yet)
 
 ### Test Utilities Provided
 

@@ -70,12 +70,11 @@ jobs:
         check_name: Unit Tests (${{ matrix.os }}, Java ${{ matrix.java }})
 
   # ==================================================
-  # Integration Tests (Shell Scripts)
+  # Integration Tests (BATS)
   # ==================================================
   integration-tests:
     name: Integration Tests (${{ matrix.os }}, Java ${{ matrix.java }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: true  # Report failures but don't block the build
     permissions:
       contents: read
       checks: write
@@ -112,13 +111,13 @@ jobs:
     - name: Verify binary works
       run: ./target/lucli --version
 
-    - name: Run Integration Tests
+    - name: Run Integration Tests (BATS)
       run: |
         chmod +x tests/*.sh tests/lib/*.sh 2>/dev/null || true
-        ./tests/test-all.sh
+        ./tests/test-bats.sh
       env:
         CI: true
-        JUNIT_XML_OUTPUT: integration-test-results.xml
+        BATS_JUNIT_XML_OUTPUT: integration-test-results.xml
 
     - name: Upload Integration Test Results
       if: always()

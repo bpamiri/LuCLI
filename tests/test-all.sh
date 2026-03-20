@@ -7,6 +7,7 @@
 #   ./tests/test-all.sh                    # Run ALL tests (comprehensive + server)
 #   SKIP_COMPREHENSIVE=1 ./tests/test-all.sh  # Skip comprehensive suite
 #   SKIP_SERVER_TESTS=1 ./tests/test-all.sh   # Skip server integration tests
+#   RUN_BATS=true ./tests/test-all.sh      # Include BATS suite (opt-in)
 #   NO_JUNIT_XML=1 ./tests/test-all.sh     # Disable JUnit XML output
 #   JUNIT_XML_OUTPUT=results.xml ./tests/test-all.sh  # Custom output path
 
@@ -108,6 +109,13 @@ EOF
 run_suite() {
     local suite_name="$1"
     local test_script="$2"
+    run_suite_command "$suite_name" "bash \"$test_script\""
+}
+
+# Function to run a test suite command
+run_suite_command() {
+    local suite_name="$1"
+    local suite_command="$2"
     local suite_start=$(date +%s)
     
     echo -e "${BLUE}▶ Running: ${suite_name}${NC}"
@@ -115,7 +123,7 @@ run_suite() {
     
     local output_file="/tmp/test-output-$$.txt"
     
-    if bash "$test_script" > "$output_file" 2>&1; then
+    if eval "$suite_command" > "$output_file" 2>&1; then
         echo -e "${GREEN}  ✅ PASSED${NC}"
         PASSED_SUITES=$((PASSED_SUITES + 1))
         JUNIT_SUITE_RESULTS+=("passed")
@@ -163,6 +171,15 @@ fi
 if [ "${SKIP_SERVER_TESTS:-}" != "1" ]; then
     run_suite "Server CFML Integration" "tests/test-server-cfml.sh"
     run_suite "URL Rewrite Integration" "tests/test-urlrewrite-integration.sh"
+fi
+
+# BATS suite (opt-in via RUN_BATS=true or RUN_BATS=1)
+if [[ "${RUN_BATS:-}" == "true" || "${RUN_BATS:-}" == "1" ]]; then
+    if [[ -n "$JUNIT_XML_OUTPUT" ]]; then
+        run_suite_command "BATS Smoke Suite" "BATS_JUNIT_XML_OUTPUT=test-bats-results.xml ./tests/test-bats.sh"
+    else
+        run_suite_command "BATS Smoke Suite" "NO_JUNIT_XML=1 ./tests/test-bats.sh"
+    fi
 fi
 
 # Results Summary

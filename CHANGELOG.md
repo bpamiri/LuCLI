@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **Parallel BATS Smoke Suite:** Added an initial `tests/bats/` suite plus `tests/test-bats.sh` runner to support incremental migration from shell-based tests without replacing existing suites. Includes smoke/version/help checks and environment dry-run coverage.
+- **BATS Migration (Second Pass):** Expanded `tests/bats/` coverage to include module lifecycle smoke checks (`modules help/list/init`), `run` command variants (`.cfm`, `.cfc` block, `.lucli` shortcut/run), and alternate `--config` dry-run selection tests.
+- **BATS JUnit Reporting + Aggregate Opt-In:** `tests/test-bats.sh` now supports JUnit XML output (`test-bats-results.xml` by default, configurable via `BATS_JUNIT_XML_OUTPUT`) and `tests/test-all.sh` can include BATS via `RUN_BATS=true` without changing default suite behavior.
+- **CI + Pre-Push BATS Primary Path:** GitHub Actions integration tests now run `tests/test-bats.sh` (with JUnit artifact publishing), and `.githooks/pre-push` now uses BATS as the shell-test gate instead of `tests/test-all.sh`.
+- **Block Direct `.cfc` Execution via `run`:** `lucli run <file>.cfc` (and equivalent shortcut invocation) is now blocked with a clear error message to avoid component pathing instability. Use module entry points via `lucli modules run <module>` instead.
 - **Runtime CWD Sync + Local Component Resolution:** LuCLI now tracks effective runtime CWD across terminal and `.lucli` execution flows, refreshes Lucee `/cwd` mappings before eval, and fixes `cd` + `cfml new LocalComponent()` / relative `run` behavior in command scripts.
 - **URL Rewrite Direct CFML Bypass:** Tomcat `rewrite.config` now preserves direct `.cfm` / `.cfc` / `.cfml` requests while still routing framework-style paths through the configured router file, with integration tests and harness cleanup updates to validate this behavior.
 - **Docs: LuCLI Command Scripts Terminology:** Documentation now standardizes `.lucli` / `.luc` automation files as “LuCLI command scripts,” adds a dedicated guide, and updates cross-links from CFML execution and CLI basics pages.
