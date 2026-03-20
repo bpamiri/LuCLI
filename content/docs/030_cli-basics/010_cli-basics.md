@@ -67,6 +67,8 @@ The help output shows:
 
 ## Making Scripts Executable
 
+For full `.lucli` / `.luc` documentation (including environment blocks and env files), see [LuCLI Command Scripts](../040_cfml-execution/025_lucli-command-scripts/).
+
 Here's a neat trick - you can make `.lucli` scripts run directly without typing `lucli` first:
 
 #### Step 1: Add a shebang line
@@ -122,7 +124,7 @@ lucli deploy.lucli
 - **Sequential execution**: Commands run in order, top to bottom
 - **No interactive prompts**: Scripts run non-interactively, so they won't pause for input
 
-### Flags with LuCLI Scripts
+### Flags with LuCLI Command Scripts
 
 You can pass global flags when executing `.lucli` scripts:
 
@@ -138,7 +140,7 @@ These flags apply to the script execution environment.
 When you run `lucli something`, LuCLI determines what to execute using this precedence:
 
 1. **Known subcommands** - `server`, `modules`, `terminal`, `cfml`, `help`
-2. **LuCLI scripts** - Existing `.lucli` files  
+2. **LuCLI command scripts** - Existing `.lucli` / `.luc` files  
 3. **CFML files** - Existing `.cfs`, `.cfm`, or `.cfc` files
 4. **Module shortcuts** - Modules in `~/.lucli/modules/`
 5. **Error** - Show help if nothing matches
@@ -148,7 +150,7 @@ When you run `lucli something`, LuCLI determines what to execute using this prec
 ```bash
 lucli server       # → Recognized subcommand, shows server help
 lucli hello.cfs    # → Existing file, executes as CFML script
-lucli deploy.lucli # → Existing file, executes as LuCLI batch script
+lucli deploy.lucli # → Existing file, executes as a LuCLI command script
 lucli hello-world  # → No file found, tries module shortcut
 lucli unknown      # → Nothing found, shows error and available options
 ```
@@ -200,7 +202,7 @@ lucli --debug broken.cfs
 Here's something to keep in mind: the Lucee engine needs to start up each time you run a command (takes about 0.8 seconds). Once it's running, everything else is fast!
 
 To get the best performance:
-- **Batch operations** - Use `.lucli` scripts to batch multiple commands
+- **Batch operations** - Use LuCLI command scripts (`.lucli`) to batch multiple commands
 - **Module development** - Modules stay within one engine instance
 - **Server mode** - For web applications, use `lucli server start` instead of one-shot execution
 - **Timing analysis** - Use `--timing` flag to identify bottlenecks

@@ -16,7 +16,7 @@ LuCLI gives you multiple ways to execute code and commands straight from the com
 1. **CFML Scripts** - Execute `.cfm`, `.cfs`, and `.cfml` files
 2. **CFML Components** - Execute `.cfc` files  
 3. **Module Commands** - Run LuCLI modules with full syntax or shortcuts
-4. **LuCLI Scripts** - Execute `.lucli` batch scripts
+4. **LuCLI Command Scripts** - Execute `.lucli` / `.luc` automation scripts (see dedicated page)
 
 All of these execution modes support helpful global flags:
 - `--verbose` / `-v` - See what's happening behind the scenes
@@ -172,127 +172,18 @@ component {
 ```
 
 
-## 4. LuCLI Batch Scripts (.lucli files)
+## 3. LuCLI Command Scripts (`.lucli` / `.luc`)
 
-Want to automate multiple commands? LuCLI scripts let you create batch files that run commands sequentially - perfect for deployment, testing, or any repetitive task!
+LuCLI command scripts now have a dedicated page, including environment-aware execution (`--env`, `LUCLI_ENV`, `#@env` blocks), `source`, and `--envfile`.
 
-### File Extension
-
-Use the `.lucli` extension for batch scripts.
-
-### Basic Syntax
-
-```bash
-lucli <script-file.lucli>
-```
-
-### Script Format
-
-Each line in a `.lucli` file is executed as a separate LuCLI command:
-
-```bash
-#!/usr/bin/env lucli
-# Example LuCLI batch script
-
-# Comments start with #
-echo "Starting automated tasks..."
-
-# Run modules
-hello-world
-modules list
-
-# Execute CFML scripts
-process-data.cfs input.txt output.txt
-
-# Run server commands
-server status
-
-echo "Tasks complete!"
-```
-
-### Making Scripts Executable
-
-Here's a neat trick - you can make `.lucli` scripts run directly without typing `lucli` first:
-
-#### Step 1: Add a shebang line
-
-Add this as the first line of your script:
-```bash
-#!/usr/bin/env lucli
-```
-
-#### Step 2: Make the file executable
-
-```bash
-chmod +x script.lucli
-```
-
-#### Step 3: Run directly
-
-```bash
-./script.lucli
-```
-
-### Complete Example
-
-Create a file called `deploy.lucli`:
-
-```bash
-#!/usr/bin/env lucli
-# Deployment automation script
-
-echo "Starting deployment process..."
-
-# Run tests
-cfformat --check *.cfs
-test-runner
-
-# Start server
-server start --name production --port 8080
-
-# Deploy application
-deploy-app production
-
-echo "Deployment complete!"
-server status
-```
-
-Make it executable and run:
-```bash
-chmod +x deploy.lucli
-./deploy.lucli
-```
-
-Or run directly:
-```bash
-lucli deploy.lucli
-```
-
-### Script Features
-
-- **Comments**: Use `#` for comments (just like shell scripts)
-- **Command execution**: Each line runs as if you typed it yourself
-- **Error handling**: The script keeps going even if one command fails
-- **Sequential execution**: Commands run in order, top to bottom
-- **No interactive prompts**: Scripts run non-interactively, so they won't pause for input
-
-### Flags with LuCLI Scripts
-
-You can pass global flags when executing `.lucli` scripts:
-
-```bash
-lucli --verbose script.lucli
-lucli --debug --timing deploy.lucli
-```
-
-These flags apply to the script execution environment.
+- [LuCLI Command Scripts (.lucli/.luc)](../lucli-command-scripts/)
 
 ## Command Precedence
 
 When you run `lucli something`, LuCLI determines what to execute using this precedence:
 
 1. **Known subcommands** - `server`, `modules`, `terminal`, `cfml`, `help`
-2. **LuCLI scripts** - Existing `.lucli` files  
+2. **LuCLI command scripts** - Existing `.lucli` / `.luc` files  
 3. **CFML files** - Existing `.cfs`, `.cfm`, or `.cfc` files
 4. **Module shortcuts** - Modules in `~/.lucli/modules/`
 5. **Error** - Show help if nothing matches
@@ -302,7 +193,7 @@ When you run `lucli something`, LuCLI determines what to execute using this prec
 ```bash
 lucli server       # → Recognized subcommand, shows server help
 lucli hello.cfs    # → Existing file, executes as CFML script
-lucli deploy.lucli # → Existing file, executes as LuCLI batch script
+lucli deploy.lucli # → Existing file, executes as a LuCLI command script
 lucli hello-world  # → No file found, tries module shortcut
 lucli unknown      # → Nothing found, shows error and available options
 ```
@@ -354,7 +245,7 @@ lucli --debug broken.cfs
 Here's something to keep in mind: the Lucee engine needs to start up each time you run a command (takes about 1-2 seconds). Once it's running, everything else is fast!
 
 To get the best performance:
-- **Batch operations** - Use `.lucli` scripts to batch multiple commands
+- **Batch operations** - Use LuCLI command scripts (`.lucli`) to batch multiple commands
 - **Module development** - Modules stay within one engine instance
 - **Server mode** - For web applications, use `lucli server start` instead of one-shot execution
 - **Timing analysis** - Use `--timing` flag to identify bottlenecks
@@ -420,8 +311,8 @@ lucli modules init my-utility
 lucli my-utility arg1 arg2
 ```
 
-### 6. Use .lucli scripts for automation
-Multi-step workflows? `.lucli` scripts are your friend:
+### 6. Use LuCLI command scripts for automation
+Multi-step workflows? LuCLI command scripts (`.lucli`) are your friend:
 ```bash
 # build.lucli
 cfformat *.cfs
@@ -430,7 +321,7 @@ package-app
 deploy-to-staging
 ```
 
-`.lucli` scripts also support output redirection for command/module output:
+LuCLI command scripts also support output redirection for command/module output:
 
 ```bash
 # overwrite file
@@ -480,7 +371,7 @@ lucli modules run module-name args...
 # Module Shortcuts
 lucli module-name args...
 
-# LuCLI Batch Scripts
+# LuCLI Command Scripts
 lucli script.lucli
 chmod +x script.lucli && ./script.lucli
 

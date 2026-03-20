@@ -29,6 +29,7 @@ If you mainly want to run CFML scripts, components, or modules from the CLI:
 
 - [Shortcuts & Direct CFML Execution](cfml-execution/shortcuts-and-direct-execution/)
 - [Running Scripts and Components](cfml-execution/running-scripts-and-components/)
+- [LuCLI Command Scripts (.lucli/.luc)](cfml-execution/lucli-command-scripts/)
 - [Interactive Terminal & REPL](cfml-execution/interactive-terminal-and-repl/)
 - [CFML Modules](cfml-execution/modules/)
 
