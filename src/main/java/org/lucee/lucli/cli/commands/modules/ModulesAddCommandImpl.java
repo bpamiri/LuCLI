@@ -44,7 +44,7 @@ public class ModulesAddCommandImpl implements Callable<Integer> {
 
     @Option(
         names = {"-f", "--force"},
-        description = "Overwrite existing module if it already exists"
+        description = "Overwrite existing module if it already exists; also auto-approve module permissions"
     )
     private boolean force;
 

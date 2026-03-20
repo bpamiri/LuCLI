@@ -47,6 +47,24 @@ public class LuceeServerManager {
         public Set<String> enableAgents;
         public Set<String> disableAgents;
     }
+
+    /**
+     * One-shot overrides applied in memory for a single start/run invocation.
+     * These values are never persisted to lucee.json.
+     */
+    public static class StartConfigOverrides {
+        public java.util.List<String> configOverrides;
+        public Integer portOverride;
+        public Boolean enableLuceeOverride;
+        public String webrootOverride;
+
+        public boolean isEmpty() {
+            return (configOverrides == null || configOverrides.isEmpty())
+                    && portOverride == null
+                    && enableLuceeOverride == null
+                    && (webrootOverride == null || webrootOverride.trim().isEmpty());
+        }
+    }
     
     private static final String LUCEE_CDN_URL_TEMPLATE = "https://cdn.lucee.org/lucee-express-{version}.zip";
     private static final String DEFAULT_VERSION = "6.2.2.91";
@@ -160,7 +178,14 @@ public class LuceeServerManager {
      */
     public ServerInstance startServer(Path projectDir, String versionOverride, boolean forceReplace, String customName,
                                       AgentOverrides agentOverrides, String environment, String configFileName) throws Exception {
-        return startServerInternal(projectDir, versionOverride, forceReplace, customName, agentOverrides, environment, configFileName, false);
+        return startServer(projectDir, versionOverride, forceReplace, customName, agentOverrides, environment, configFileName, null);
+    }
+
+    public ServerInstance startServer(Path projectDir, String versionOverride, boolean forceReplace, String customName,
+                                      AgentOverrides agentOverrides, String environment, String configFileName,
+                                      StartConfigOverrides startConfigOverrides) throws Exception {
+        return startServerInternal(projectDir, versionOverride, forceReplace, customName, agentOverrides,
+                environment, configFileName, false, startConfigOverrides);
     }
     
     /**
@@ -195,7 +220,15 @@ public class LuceeServerManager {
      */
     public void runServerForeground(Path projectDir, String versionOverride, boolean forceReplace, String customName,
                                     AgentOverrides agentOverrides, String environment, String configFileName) throws Exception {
-        startServerInternal(projectDir, versionOverride, forceReplace, customName, agentOverrides, environment, configFileName, true);
+        runServerForeground(projectDir, versionOverride, forceReplace, customName, agentOverrides, environment,
+                configFileName, null);
+    }
+
+    public void runServerForeground(Path projectDir, String versionOverride, boolean forceReplace, String customName,
+                                    AgentOverrides agentOverrides, String environment, String configFileName,
+                                    StartConfigOverrides startConfigOverrides) throws Exception {
+        startServerInternal(projectDir, versionOverride, forceReplace, customName, agentOverrides, environment,
+                configFileName, true, startConfigOverrides);
     }
 
 
@@ -464,7 +497,8 @@ public class LuceeServerManager {
      * @return ServerInstance (only when foreground=false; returns null when foreground=true)
      */
     private ServerInstance startServerInternal(Path projectDir, String versionOverride, boolean forceReplace, String customName,
-                                      AgentOverrides agentOverrides, String environment, String configFileName, boolean foreground) throws Exception {
+                                      AgentOverrides agentOverrides, String environment, String configFileName,
+                                      boolean foreground, StartConfigOverrides startConfigOverrides) throws Exception {
         // Determine which configuration file to load
         String cfgFile = (configFileName != null && !configFileName.trim().isEmpty())
                 ? configFileName
@@ -515,6 +549,9 @@ public class LuceeServerManager {
                 config = LuceeServerConfig.applyEnvironment(config, environment, projectDir);
             }
         }
+
+        // Apply one-shot invocation overrides in memory (never persisted).
+        applyStartConfigOverrides(config, startConfigOverrides);
         
         // Resolve secrets only for actual server startup (not for generic config reads)
         LuceeServerConfig.resolveSecretPlaceholders(config, projectDir);
@@ -577,6 +614,43 @@ public class LuceeServerManager {
         LuceeServerConfig.validateCfConfigSupport(config);
         RuntimeProvider provider = getRuntimeProvider(runtimeConfig.type);
         return provider.start(this, config, projectDir, environment, agentOverrides, foreground, forceReplace);
+    }
+
+    /**
+     * Apply one-shot start/run overrides to a loaded config in memory.
+     * This never persists changes to lucee.json.
+     */
+    public static void applyStartConfigOverrides(LuceeServerConfig.ServerConfig config,
+                                                 StartConfigOverrides startConfigOverrides) {
+        if (config == null || startConfigOverrides == null || startConfigOverrides.isEmpty()) {
+            return;
+        }
+
+        if (startConfigOverrides.configOverrides != null && !startConfigOverrides.configOverrides.isEmpty()) {
+            ServerConfigHelper configHelper = new ServerConfigHelper();
+            for (String kv : startConfigOverrides.configOverrides) {
+                if (kv == null || !kv.contains("=")) {
+                    continue;
+                }
+                String[] parts = kv.split("=", 2);
+                String key = parts[0].trim();
+                String value = parts.length > 1 ? parts[1].trim() : "";
+                if (!key.isEmpty()) {
+                    configHelper.setConfigValue(config, key, value);
+                }
+            }
+        }
+
+        if (startConfigOverrides.webrootOverride != null
+                && !startConfigOverrides.webrootOverride.trim().isEmpty()) {
+            config.webroot = startConfigOverrides.webrootOverride.trim();
+        }
+        if (startConfigOverrides.portOverride != null) {
+            config.port = startConfigOverrides.portOverride.intValue();
+        }
+        if (startConfigOverrides.enableLuceeOverride != null) {
+            config.enableLucee = startConfigOverrides.enableLuceeOverride.booleanValue();
+        }
     }
     
     /**

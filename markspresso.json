@@ -28,7 +28,20 @@
       "enabled": true
     }
   },
-  "baseUrl": "http://localhost:8080",
+  "socialImages": {
+    "enabled": true,
+    "width": 1200,
+    "height": 630,
+    "outputDir": "social-images",
+    "titleMaxLines": 3,
+    "descriptionMaxLines": 3,
+    "overrideOgImage": false,
+    "useRelativeInDev": true,
+    "backgroundStartColor": "#0f172a",
+    "backgroundEndColor": "#1d4ed8",
+    "accentColor": "#60a5fa"
+  },
+  "baseUrl": "https://lucli.dev",
   "paths": {
     "content": "content",
     "output": "public",

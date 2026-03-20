@@ -10,6 +10,7 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.lucee.lucli.secrets.LucliSecretProviderSupport;
 
 /**
  * Manages LuCLI settings stored in ~/.lucli/settings.json
@@ -111,6 +112,10 @@ public class Settings {
         moduleRuntime.put("strictEnv", false);
         moduleRuntime.put("allowDotEnvFallback", false);
         defaultSettings.set("moduleRuntime", moduleRuntime);
+
+        ObjectNode secrets = objectMapper.createObjectNode();
+        secrets.put("provider", LucliSecretProviderSupport.LOCAL_PROVIDER_NAME);
+        defaultSettings.set("secrets", secrets);
         
         return defaultSettings;
     }
@@ -159,6 +164,33 @@ public class Settings {
             ((ObjectNode) settings).put(key, value);
             saveSettings();
         }
+    }
+
+    /**
+     * Get selected LuCLI secret provider name.
+     * Falls back to the local encrypted provider.
+     */
+    public String getSelectedSecretProvider() {
+        JsonNode node = getNestedSetting("secrets", "provider");
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return LucliSecretProviderSupport.LOCAL_PROVIDER_NAME;
+        }
+        String value = node.asText();
+        if (value == null || value.trim().isEmpty()) {
+            return LucliSecretProviderSupport.LOCAL_PROVIDER_NAME;
+        }
+        return value.trim();
+    }
+
+    /**
+     * Set selected LuCLI secret provider name.
+     */
+    public void setSelectedSecretProvider(String providerName) {
+        String normalized = providerName;
+        if (normalized == null || normalized.trim().isEmpty()) {
+            normalized = LucliSecretProviderSupport.LOCAL_PROVIDER_NAME;
+        }
+        setNestedSetting(normalized.trim(), "secrets", "provider");
     }
     
     /**

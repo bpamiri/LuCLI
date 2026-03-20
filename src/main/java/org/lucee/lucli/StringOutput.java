@@ -134,6 +134,7 @@ public class StringOutput {
         placeholderReplacements.put("EMOJI_ART", () -> WindowsSupport.getEmoji("🎨", "[STYLE]"));
         placeholderReplacements.put("EMOJI_WAVE", () -> WindowsSupport.getEmoji("👋", "[BYE]"));
         placeholderReplacements.put("EMOJI_BULB", () -> WindowsSupport.getEmoji("💡", "[TIP]"));
+        placeholderReplacements.put("EMOJI_DOWNLOAD", () -> WindowsSupport.getEmoji("⬇️", "[DOWNLOAD]"));
         
         // Additional emoji placeholders
         placeholderReplacements.put("EMOJI_FIRE", () -> WindowsSupport.getEmoji("🔥", "[HOT]"));
@@ -662,6 +663,9 @@ public class StringOutput {
         
         public static void warning(String message) {
             output.println("${EMOJI_WARNING} " + message);
+        }
+        public static void download(String message) {
+            output.println("${EMOJI_DOWNLOAD} " + message);
         }
         
         public static void info(String message) {

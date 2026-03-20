@@ -6,7 +6,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptException;
@@ -14,6 +18,7 @@ import javax.script.ScriptException;
 import org.lucee.lucli.modules.ModuleCommand;
 import org.lucee.lucli.modules.ModuleConfig;
 import org.lucee.lucli.modules.ModuleRuntimeConfigResolver;
+import org.lucee.lucli.secrets.LucliSecretProviderSupport;
 
 import lucee.runtime.script.LuceeScriptEngineFactory;
 import lucee.runtime.type.Array;
@@ -40,13 +45,114 @@ public class LuceeScriptEngine {
     
     // Ensure we only perform BaseModule synchronization once per JVM
     private boolean baseModuleEnsured = false;
+    private volatile Path lastMappedCwd = null;
 
     // Helper methods - moved from LuCLI
     
     private boolean isVerboseMode() {
         return LuCLI.verbose;
     }
-    
+
+    private Path getEffectiveRuntimeCwd() {
+        return LuCLI.getEffectiveRuntimeCwd();
+    }
+
+    private void ensureRuntimeCwdContext() throws ScriptException {
+        Path effectiveCwd = getEffectiveRuntimeCwd();
+        ensureCwdMapping(effectiveCwd);
+        engine.put("__cwd", effectiveCwd.toString());
+    }
+
+    private synchronized void ensureCwdMapping(Path cwd) throws ScriptException {
+        if (cwd == null) {
+            cwd = getEffectiveRuntimeCwd();
+        }
+        cwd = cwd.toAbsolutePath().normalize();
+
+        Path last = lastMappedCwd;
+        if (last != null && last.equals(cwd)) {
+            return;
+        }
+
+        Map<String, Object> rootConfig = new HashMap<>();
+        Map<String, Object> componentMapping = new HashMap<>();
+        componentMapping.put("inspectTemplate", "once");
+        componentMapping.put("physical", cwd.toString());
+        componentMapping.put("archive", "");
+        componentMapping.put("virtual", "/");
+        java.util.List<Map<String, Object>> componentMappings = new java.util.ArrayList<>();
+        componentMappings.add(componentMapping);
+        rootConfig.put("componentMappings", componentMappings);
+
+        // Map<String, Object> mappings = new HashMap<>();
+        // Map<String, Object> cwdMapping = new HashMap<>();
+        // cwdMapping.put("inspectTemplate", "auto");
+        // cwdMapping.put("physical", cwd.toString());
+        // cwdMapping.put("primary", "physical");
+        // cwdMapping.put("toplevel", false);
+        // mappings.put("/", cwdMapping);
+        // rootConfig.put("Mappings", mappings);
+
+        // engine.put("__cwdMappingConfig", rootConfig);
+        // Removing as we dont need it if we use the right dotted path!
+        // engine.eval(
+        //     "configImport(data=__cwdMappingConfig,password=request.SERVERADMINPASSWORD,type=\"server\",flushExistingData=false);"
+        // );
+        lastMappedCwd = cwd;
+    }
+
+    private String maybePrependCwdImport(String script) {
+        if (script == null) {
+            return "";
+        }
+        String trimmed = script.trim();
+        if (trimmed.isEmpty()) {
+            return script;
+        }
+        if (trimmed.startsWith("<")) {
+            return script;
+        }
+
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("import ")) {
+            return script;
+        }
+        if (lower.contains("import cwd.*")) {
+            return script;
+        }
+
+        return "import cwd.*;" + System.lineSeparator() + script;
+    }
+
+    private String qualifyLocalComponentInstantiations(String script) {
+        if (script == null || script.isEmpty()) {
+            return script;
+        }
+
+        Path cwd = getEffectiveRuntimeCwd();
+        Pattern pattern = Pattern.compile("(?<![A-Za-z0-9_\\.])new\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
+        Matcher matcher = pattern.matcher(script);
+        StringBuffer rewritten = new StringBuffer();
+        boolean changed = false;
+
+        while (matcher.find()) {
+            String componentName = matcher.group(1);
+            Path candidate = cwd.resolve(componentName + ".cfc");
+            if (Files.exists(candidate)) {
+                matcher.appendReplacement(
+                    rewritten,
+                    Matcher.quoteReplacement("new cwd." + componentName + "(")
+                );
+                changed = true;
+            } else {
+                matcher.appendReplacement(rewritten, Matcher.quoteReplacement(matcher.group(0)));
+            }
+        }
+
+        matcher.appendTail(rewritten);
+        return changed ? rewritten.toString() : script;
+    }
+
     private boolean isDebugMode() {
         return LuCLI.debug;
     }
@@ -121,6 +227,8 @@ public class LuceeScriptEngine {
         engine.put("__verboseMode", isVerboseMode());
         engine.put("__debugMode", isDebugMode());
         engine.put("__preserveWhitespace", LuCLI.preserveWhitespace);
+        engine.put("__lucliSecretProviderConfigJson", LucliSecretProviderSupport.getFallbackSecretProviderJson());
+        engine.put("__cwd", LuCLI.getEffectiveRuntimeCwd().toString());
         
         Timer.stop("Setup Engine Variables");
         
@@ -144,7 +252,9 @@ public class LuceeScriptEngine {
      * Execute a simple CFML code snippet
      */
     public Object eval(String script) throws ScriptException {
-        return engine.eval(script);
+        ensureRuntimeCwdContext();
+        String preparedScript = qualifyLocalComponentInstantiations(script);
+        return engine.eval(maybePrependCwdImport(preparedScript));
     }
 
 
@@ -173,7 +283,9 @@ public class LuceeScriptEngine {
         }
         
         // Execute the script statement
-        engine.eval(scriptStatement);
+        ensureRuntimeCwdContext();
+        String preparedScript = qualifyLocalComponentInstantiations(scriptStatement);
+        engine.eval(maybePrependCwdImport(preparedScript));
         Object result = engine.get("result");
         
         return result;
@@ -196,6 +308,8 @@ public class LuceeScriptEngine {
        
         BuiltinVariableManager variableManager = BuiltinVariableManager.getInstance(LuCLI.verbose, LuCLI.debug);
         variableManager.setupBuiltinVariables(engine, scriptFile, scriptArgs);
+
+        ensureRuntimeCwdContext();
             
         // Execute the script
         engine.eval(scriptContent);
@@ -322,7 +436,7 @@ public class LuceeScriptEngine {
             ModuleConfig moduleConfig = ModuleConfig.load(moduleDir);
             ModuleRuntimeConfigResolver resolver = ModuleRuntimeConfigResolver.fromSettings();
             ModuleRuntimeConfigResolver.ResolutionResult runtimeResolution =
-                resolver.resolve(moduleName, moduleConfig, Paths.get(System.getProperty("user.dir")));
+                resolver.resolve(moduleName, moduleConfig, getEffectiveRuntimeCwd());
             
             String subCommand = "main";
             ParsedArguments parsedArgs = parseArguments(scriptArgs);
@@ -507,7 +621,8 @@ public class LuceeScriptEngine {
             engine.put("verbose", LuCLI.verbose);
             engine.put("timing", LuCLI.timing);
             engine.put("timer", Timer.getInstance());
-            engine.put("componentPath", getDottedPathFromCWD(scriptFile));
+            String dottedComponentPath = getDottedPathFromCWD(scriptFile);
+            engine.put("componentPath", dottedComponentPath);
 
             // Script to run 
             String script = readScriptTemplate("/script_engine/executeComponentFromCWD.cfs");
@@ -516,13 +631,14 @@ public class LuceeScriptEngine {
             Timer.start("Executing CFC");
             try{
                 engine.eval(script);
-
+                Object result = engine.get("result");
+                System.out.println(result);
             }
             catch(ScriptException e){
                 if(isDebugMode()) {
                     e.printStackTrace();
                 }
-                throw new ScriptException("Error executing CFC '" + scriptFile +  "': " + e.getMessage());
+                throw new ScriptException("Error executing CFC '" + scriptFile +  "' (" + dottedComponentPath + "): " + e.getMessage());
             }
             Timer.stop("Executing CFC");
         
@@ -600,6 +716,8 @@ public class LuceeScriptEngine {
                 System.err.println("Warning: Failed to set up lucli mapping: " + e.getMessage());
             }
         }
+
+        ensureRuntimeCwdContext();
         
         // Execute the script
         if (isVerboseMode()) {
@@ -638,23 +756,40 @@ public class LuceeScriptEngine {
         }
     }
 
-    private void setupScriptContext(ScriptEngine engine, String scriptFile, String[] scriptArgs) throws IOException {
-
-        // Bindings bindings = engine.createBindings();
-        // Set current working directory
+    private void setupScriptContext(ScriptEngine engine, String scriptFile, String[] scriptArgs) throws Exception {
+        if (scriptArgs == null) {
+            scriptArgs = new String[0];
+        }
+        if (scriptFile == null) {
+            scriptFile = "";
+        }
+        Path effectiveCwd = getEffectiveRuntimeCwd();
+        ensureCwdMapping(effectiveCwd);
+        engine.put("__cwd", effectiveCwd.toString());
         engine.put("__cwd", System.getProperty("user.dir"));
         // Set script file information
         engine.put("__scriptFile", scriptFile);
-        engine.put("__scriptPath", Paths.get(scriptFile).toAbsolutePath().toString());
+        Path scriptPath = null;
+        if (!scriptFile.isEmpty()) {
+            scriptPath = Paths.get(scriptFile);
+            if (!scriptPath.isAbsolute()) {
+                scriptPath = effectiveCwd.resolve(scriptPath);
+            }
+            scriptPath = scriptPath.toAbsolutePath().normalize();
+        }
+        engine.put("__scriptPath", scriptPath == null ? "" : scriptPath.toString());
         
         // Handle case where file is in current directory (getParent() returns null)
-        Path parent = Paths.get(scriptFile).getParent();
-        String scriptDir = parent != null ? parent.toAbsolutePath().toString() : System.getProperty("user.dir");
+        Path parent = scriptPath == null ? null : scriptPath.getParent();
+        String scriptDir = parent != null ? parent.toString() : effectiveCwd.toString();
         engine.put("__scriptDir", scriptDir);
         
         // Set arguments
         engine.put("__arguments", scriptArgs);
         engine.put("__argumentCount", scriptArgs.length);
+        engine.put(BuiltinVariableManager.LEGACY_ARGV, BuiltinVariableManager.createLegacyArgv(scriptFile, scriptArgs));
+        engine.put(BuiltinVariableManager.LEGACY_ARGS, BuiltinVariableManager.createLegacyArgsStruct(scriptFile, scriptArgs));
+        engine.put(BuiltinVariableManager.NAMED_ARGUMENTS, BuiltinVariableManager.createNamedArgumentMap(scriptArgs));
         
         // Set individual arguments for easy access (similar to CGI.argv)
         for (int i = 0; i < scriptArgs.length; i++) {
@@ -691,6 +826,7 @@ public class LuceeScriptEngine {
             System.out.println("Script context variables set:");
             System.out.println("  __scriptFile: " + scriptFile);
             System.out.println("  __arguments: " + Arrays.toString(scriptArgs));
+            System.out.println("  ARGS: " + BuiltinVariableManager.createLegacyArgsStruct(scriptFile, scriptArgs));
             System.out.println("  __lucliHome: " + lucliHome);
         }
     }
@@ -1046,9 +1182,18 @@ public class LuceeScriptEngine {
 
 
    public String getDottedPathFromCWD(String scriptFile) {
-        Path cwd = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        Path scriptPath = Paths.get(scriptFile).toAbsolutePath();
-        Path relativePath = cwd.relativize(scriptPath);
+        Path cwd = getEffectiveRuntimeCwd();
+        Path scriptPath = Paths.get(scriptFile);
+        if (!scriptPath.isAbsolute()) {
+            scriptPath = cwd.resolve(scriptPath);
+        }
+        scriptPath = scriptPath.toAbsolutePath().normalize();
+        Path relativePath;
+        try {
+            relativePath = cwd.relativize(scriptPath);
+        } catch (IllegalArgumentException e) {
+            relativePath = scriptPath.getFileName() != null ? scriptPath.getFileName() : scriptPath;
+        }
         
         String componentPath = relativePath.toString();
         if (componentPath.toLowerCase().endsWith(".cfc")) {
@@ -1493,19 +1638,11 @@ public class LuceeScriptEngine {
     }
 
     public Integer executeCFMFile(String scriptPath, String[] scriptArgs) throws Exception {
-        String scriptFileContent = new String(Files.readAllBytes(Paths.get(scriptPath)), java.nio.charset.StandardCharsets.UTF_8);
-        scriptFileContent = stripShebang(scriptFileContent);
-        //Need to add usual variables. 
-        setupScriptContext(engine, scriptPath, scriptArgs);
-        return executeScriptByString("```" + scriptFileContent + "```", scriptPath, scriptArgs);
+        return executeScript(scriptPath, scriptArgs);
     }
 
     public Integer executeCFSFile(String scriptPath, String[] scriptArgs) throws Exception {
-       String scriptFileContent = new String(Files.readAllBytes(Paths.get(scriptPath)), java.nio.charset.StandardCharsets.UTF_8);
-        scriptFileContent = stripShebang(scriptFileContent);
-        //Need to add usual variables. 
-        setupScriptContext(engine, scriptPath, scriptArgs);
-        return executeScriptByString( scriptFileContent , scriptPath, scriptArgs);
+        return executeScript(scriptPath, scriptArgs);
     }
 
     /**

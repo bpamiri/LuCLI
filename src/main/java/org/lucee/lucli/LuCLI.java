@@ -2,9 +2,11 @@ package org.lucee.lucli;
 
 import java.io.File;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -183,6 +185,7 @@ public class LuCLI implements Callable<Integer> {
     public static String currentEnvironment = null;
     public static String envFilePath = null;
     private static boolean lucliScript = false;
+    private static volatile Path runtimeCwd = null;
     
     public static Map<String, String> scriptEnvironment = new HashMap<>(System.getenv());
     
@@ -239,7 +242,9 @@ public class LuCLI implements Callable<Integer> {
         try {
             // Handle special version command
             if (luceeVersionRequested) {
-                showLuceeVersionNonInteractive();
+                String luceeVersion = LuceeScriptEngine.getInstance().getVersion();
+                StringOutput.Quick.info("Lucee Version: " + luceeVersion);
+                // showLuceeVersionNonInteractive();
                 return 0;
             }
 
@@ -424,6 +429,42 @@ public class LuCLI implements Callable<Integer> {
         
         return null;
     }
+
+    /**
+     * Set explicit runtime CWD used by LuCLI-managed execution contexts.
+     */
+    public static void setRuntimeCwd(Path cwd) {
+        if (cwd == null) {
+            runtimeCwd = null;
+            return;
+        }
+        runtimeCwd = cwd.toAbsolutePath().normalize();
+    }
+
+    /**
+     * Return explicit runtime CWD override if set; otherwise null.
+     */
+    public static Path getRuntimeCwd() {
+        return runtimeCwd;
+    }
+
+    /**
+     * Clear explicit runtime CWD override.
+     */
+    public static void clearRuntimeCwd() {
+        runtimeCwd = null;
+    }
+
+    /**
+     * Resolve effective runtime CWD, falling back to JVM user.dir.
+     */
+    public static Path getEffectiveRuntimeCwd() {
+        Path cwd = runtimeCwd;
+        if (cwd != null) {
+            return cwd;
+        }
+        return Paths.get(System.getProperty("user.dir")).toAbsolutePath().normalize();
+    }
     
     // ====================
     // Main Entry Point
@@ -432,6 +473,13 @@ public class LuCLI implements Callable<Integer> {
     public static void main(String[] args) throws Exception {
         // Suppress JLine "Unable to create a system terminal" warning
         java.util.logging.Logger.getLogger("org.jline").setLevel(java.util.logging.Level.SEVERE);
+
+        // Binary name detection runs only on the initial CLI entry point — NOT in
+        // executeInProcess() — because modules call executeInProcess() recursively
+        // (e.g., BaseModule.executeCommand("server", ["start"])) and the system
+        // property persists for the JVM's lifetime. Prepending here ensures it
+        // happens exactly once.
+        args = prependBinaryNameIfAliased(args);
 
         int exitCode = executeInProcess(args);
         System.exit(exitCode);
@@ -450,6 +498,12 @@ public class LuCLI implements Callable<Integer> {
         // Suppress JLine "Unable to create a system terminal" warning
         java.util.logging.Logger.getLogger("org.jline").setLevel(java.util.logging.Level.SEVERE);
 
+        // For one-shot in-process invocations, default runtime CWD to JVM user.dir
+        // unless a session flow has already provided an explicit value.
+        if (runtimeCwd == null) {
+            setRuntimeCwd(Paths.get(System.getProperty("user.dir")));
+        }
+
         // Pre-process: if first arg is a module name and --help/-h is present,
         // rewrite to "modules run <module> --help" so picocli routes to
         // ModulesRunCommandImpl (which delegates to the module's showHelp())
@@ -458,6 +512,7 @@ public class LuCLI implements Callable<Integer> {
         
         // Create Picocli CommandLine with our main command
         CommandLine cmd = new CommandLine(new LuCLI());
+        cmd.setExpandAtFiles(false);
         
         // Configure output streams
         cmd.setOut(new PrintWriter(System.out, true));
@@ -484,6 +539,40 @@ public class LuCLI implements Callable<Integer> {
         return exitCode;
     }
     
+    /**
+     * If the binary was invoked under an alias (e.g., via symlink "wheels" -> "lucli"),
+     * prepend the binary name as the first argument so it routes to the corresponding
+     * module. For example, "wheels generate model User" becomes
+     * ["wheels", "generate", "model", "User"] which routes to the "wheels" module.
+     *
+     * The binary name is passed from the shell stub via -Dlucli.binary.name.
+     * Only activates when the name is not "lucli" itself.
+     */
+    private static String[] prependBinaryNameIfAliased(String[] args) {
+        String binaryName = System.getProperty("lucli.binary.name", "lucli");
+
+        // Strip path separators in case the property contains a path fragment
+        if (binaryName.contains("/") || binaryName.contains("\\")) {
+            binaryName = Paths.get(binaryName).getFileName().toString();
+        }
+
+        // Only activate for non-lucli binary names
+        if ("lucli".equals(binaryName) || "lucli.sh".equals(binaryName) || binaryName.isEmpty()) {
+            return args;
+        }
+
+        // Note: verbose/debug flags are not yet parsed at this point (pre-picocli),
+        // so use LUCLI_DEBUG env var for early-boot diagnostics.
+        if (System.getenv("LUCLI_DEBUG") != null) {
+            System.err.println("[lucli] Binary name detection: invoked as '" + binaryName + "', prepending module name");
+        }
+
+        String[] newArgs = new String[args.length + 1];
+        newArgs[0] = binaryName;
+        System.arraycopy(args, 0, newArgs, 1, args.length);
+        return newArgs;
+    }
+
     /**
      * If the CLI args look like {@code <module-name> [subcommand...] --help},
      * rewrite them to {@code modules run <module-name> [subcommand...] --help}
@@ -1008,9 +1097,11 @@ public class LuCLI implements Callable<Integer> {
 
         // Set up a lightweight command environment similar to Terminal.dispatchCommand
         org.lucee.lucli.CommandProcessor commandProcessor = new org.lucee.lucli.CommandProcessor();
+        setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
         org.lucee.lucli.ExternalCommandProcessor externalCommandProcessor =
             new org.lucee.lucli.ExternalCommandProcessor(commandProcessor, commandProcessor.getSettings());
         CommandLine picocli = new CommandLine(new org.lucee.lucli.LuCLI());
+        picocli.setExpandAtFiles(false);
 
         StringOutput stringOutput = StringOutput.getInstance();
         boolean assertionFailed = false;
@@ -1152,9 +1243,18 @@ public class LuCLI implements Callable<Integer> {
 
             // Apply StringOutput placeholder processing
             String processedLine = stringOutput.process(lineWithSecrets);
+            ScriptOutputRedirection redirection;
+            try {
+                redirection = parseScriptOutputRedirection(processedLine);
+            } catch (IllegalArgumentException e) {
+                StringOutput.Quick.error("Script redirection syntax error: " + e.getMessage());
+                continue;
+            }
+
+            String commandToRun = redirection == null ? processedLine : redirection.commandLine;
 
             // Parse command into parts using the same parser as the terminal
-            String[] parts = commandProcessor.parseCommand(processedLine);
+            String[] parts = commandProcessor.parseCommand(commandToRun);
             if (parts.length == 0) {
                 continue;
             }
@@ -1163,30 +1263,53 @@ public class LuCLI implements Callable<Integer> {
 
             // Built-in testing/assertion command: assert <actual> <expected>
             if ("assert".equals(command)) {
+                String assertOutput;
                 if (parts.length < 3) {
+                    assertOutput = "❌ assert: usage: assert <actual> <expected>";
                     StringOutput.Quick.error("assert: usage: assert <actual> <expected>");
                 } else {
                     String actual = parts[1];
                     String expected = parts[2];
 
                     if (actual.equals(expected)) {
-                        System.out.println("✅ assert passed: expected '" + expected + "'");
+                        assertOutput = "✅ assert passed: expected '" + expected + "'";
                     } else {
-                        System.out.println("❌ assert failed: expected '" + expected + "' but got '" + actual + "'");
+                        assertOutput = "❌ assert failed: expected '" + expected + "' but got '" + actual + "'";
                         assertionFailed = true;
                     }
+                }
+
+                if (redirection != null) {
+                    try {
+                        writeScriptRedirectOutput(redirection, assertOutput, commandProcessor);
+                    } catch (Exception e) {
+                        StringOutput.Quick.error("Error writing redirected output to '" + redirection.targetPath + "': " + e.getMessage());
+                        debugStack(e);
+                    }
+                } else {
+                    System.out.println(assertOutput);
                 }
                 continue;
             }
 
             // Delegate all other commands to the shared dispatcher
             String result = executeLucliScriptCommand(
-                processedLine,
+                commandToRun,
                 commandProcessor,
                 externalCommandProcessor,
                 picocli,
                 true
             );
+
+            if (redirection != null) {
+                try {
+                    writeScriptRedirectOutput(redirection, result, commandProcessor);
+                } catch (Exception e) {
+                    StringOutput.Quick.error("Error writing redirected output to '" + redirection.targetPath + "': " + e.getMessage());
+                    debugStack(e);
+                }
+                continue;
+            }
 
             if(result != null && !result.trim().isEmpty()) {
                 recordLucliResult(result);
@@ -1199,6 +1322,132 @@ public class LuCLI implements Callable<Integer> {
 
         // Scripts are best-effort; fail overall if any assertion failed
         return assertionFailed ? 1 : 0;
+    }
+
+    static ScriptOutputRedirection parseScriptOutputRedirection(String line) {
+        if (line == null || line.isBlank()) {
+            return null;
+        }
+
+        boolean inSingleQuotes = false;
+        boolean inDoubleQuotes = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+
+            if (ch == '\'' && !inDoubleQuotes) {
+                inSingleQuotes = !inSingleQuotes;
+                continue;
+            }
+            if (ch == '"' && !inSingleQuotes) {
+                inDoubleQuotes = !inDoubleQuotes;
+                continue;
+            }
+
+            if (ch != '>' || inSingleQuotes || inDoubleQuotes) {
+                continue;
+            }
+
+            boolean append = (i + 1 < line.length() && line.charAt(i + 1) == '>');
+            int operatorLength = append ? 2 : 1;
+            String commandPart = line.substring(0, i).trim();
+            String targetPart = line.substring(i + operatorLength).trim();
+
+            if (commandPart.isEmpty()) {
+                throw new IllegalArgumentException("missing command before output redirection");
+            }
+            if (targetPart.isEmpty()) {
+                throw new IllegalArgumentException("missing file path after output redirection");
+            }
+
+            String normalizedTarget = unquoteScriptRedirectionTarget(targetPart);
+            if (normalizedTarget == null || normalizedTarget.isBlank()) {
+                throw new IllegalArgumentException("missing file path after output redirection");
+            }
+
+            return new ScriptOutputRedirection(commandPart, normalizedTarget, append);
+        }
+        return null;
+    }
+
+    private static void writeScriptRedirectOutput(
+        ScriptOutputRedirection redirection,
+        String commandOutput,
+        org.lucee.lucli.CommandProcessor commandProcessor
+    ) throws Exception {
+        Path outputPath = commandProcessor
+            .getFileSystemState()
+            .resolvePath(redirection.targetPath)
+            .toAbsolutePath()
+            .normalize();
+
+        Path parent = outputPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
+        String content = commandOutput == null ? "" : commandOutput.trim();
+        if (!content.isEmpty()) {
+            content = content + System.lineSeparator();
+        }
+
+        if (redirection.append) {
+            Files.writeString(
+                outputPath,
+                content,
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND
+            );
+            return;
+        }
+
+        Files.writeString(
+            outputPath,
+            content,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING,
+            StandardOpenOption.WRITE
+        );
+    }
+
+    private static String unquoteScriptRedirectionTarget(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() >= 2) {
+            char first = trimmed.charAt(0);
+            char last = trimmed.charAt(trimmed.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                return trimmed.substring(1, trimmed.length() - 1);
+            }
+        }
+        return trimmed;
+    }
+
+    static final class ScriptOutputRedirection {
+        final String commandLine;
+        final String targetPath;
+        final boolean append;
+
+        ScriptOutputRedirection(String commandLine, String targetPath, boolean append) {
+            this.commandLine = commandLine;
+            this.targetPath = targetPath;
+            this.append = append;
+        }
     }
 //  ExecFile, ExecLine, ExecVar, ExecEval
     
@@ -1347,6 +1596,7 @@ public class LuCLI implements Callable<Integer> {
         // into the script, strip the leading "lucli" so we don't recursively
         // invoke LuCLI from within itself.
         String scriptLine = processedLine == null ? "" : processedLine.trim();
+        setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
 
         // Should be fairly unreachable since this is pre-checked, but guard against empty lines
         if(scriptLine.trim().isEmpty()) {
@@ -1455,6 +1705,7 @@ public class LuCLI implements Callable<Integer> {
                         System.setOut(new java.io.PrintStream(baos));
                         System.setErr(new java.io.PrintStream(baos));
                         picocli.execute(parts); // Picocli writes directly to System.out/err
+                        setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     } finally {
                         System.setOut(originalOut);
                         System.setErr(originalErr);
@@ -1466,6 +1717,7 @@ public class LuCLI implements Callable<Integer> {
                     return captured;
                 } else {
                     picocli.execute(parts);
+                    setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     return "";
                 }
             }
@@ -1485,6 +1737,7 @@ public class LuCLI implements Callable<Integer> {
                         System.setOut(new java.io.PrintStream(baos));
                         System.setErr(new java.io.PrintStream(baos));
                         org.lucee.lucli.modules.ModuleCommand.executeModuleByName(command, moduleArgs);
+                        setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     } finally {
                         System.setOut(originalOut);
                         System.setErr(originalErr);
@@ -1496,6 +1749,7 @@ public class LuCLI implements Callable<Integer> {
                     return captured;
                 } else {
                     org.lucee.lucli.modules.ModuleCommand.executeModuleByName(command, moduleArgs);
+                    setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     return "";
                 }
             }
@@ -1503,6 +1757,7 @@ public class LuCLI implements Callable<Integer> {
             // 3) File-system style commands (ls, cd, rm, etc.)
             if (isFileSystemStyleCommand(command)) {
                 String fsResult = commandProcessor.executeCommand(scriptLine);
+                setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                 if (fsResult != null) {
                     recordLucliResult(fsResult);
                 }
@@ -1518,6 +1773,7 @@ public class LuCLI implements Callable<Integer> {
 
             // 4) Fallback to external command processor (git, echo, etc.)
             String extResult = externalCommandProcessor.executeCommand(scriptLine);
+            setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
             if (extResult != null) {
                 recordLucliResult(extResult);
             }

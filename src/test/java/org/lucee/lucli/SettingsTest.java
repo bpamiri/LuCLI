@@ -255,6 +255,22 @@ class SettingsTest {
         assertNull(settings.getLanguage());
     }
 
+    @Test
+    void testSelectedSecretProviderDefaultsToLocal() {
+        Settings settings = new Settings();
+        assertEquals("lucli-local", settings.getSelectedSecretProvider());
+    }
+
+    @Test
+    void testSetSelectedSecretProvider() {
+        Settings settings = new Settings();
+        settings.setSelectedSecretProvider("aws-sm");
+        assertEquals("aws-sm", settings.getSelectedSecretProvider());
+
+        settings.setSelectedSecretProvider(null);
+        assertEquals("lucli-local", settings.getSelectedSecretProvider());
+    }
+
     // ============================================
     // getAllSettings Tests
     // ============================================

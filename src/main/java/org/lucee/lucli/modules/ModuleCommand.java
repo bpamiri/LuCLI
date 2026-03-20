@@ -7,7 +7,6 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Scanner;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -82,7 +81,7 @@ public static void executeModule(String[] args) {
     }
 }
 
-private static void ensureModulePermissionsGranted(String moduleName, ModuleConfig config) throws IOException {
+private static void ensureModulePermissionsGranted(String moduleName, ModuleConfig config, boolean force) throws IOException {
     if (config == null || !config.hasDeclaredPermissions()) {
         return;
     }
@@ -147,15 +146,19 @@ private static void ensureModulePermissionsGranted(String moduleName, ModuleConf
         System.out.println("  New secret aliases requiring approval: " + String.join(", ", newlyRequestedSecrets));
     }
 
-    java.io.Console console = System.console();
-    if (console == null) {
-        throw new IOException("Cannot prompt for module permission approval in non-interactive mode for module '"
-            + moduleName + "'.");
-    }
+    if (force) {
+        System.out.println("  Auto-approving requested permissions because --force was provided.");
+    } else {
+        java.io.Console console = System.console();
+        if (console == null) {
+            throw new IOException("Cannot prompt for module permission approval in non-interactive mode for module '"
+                + moduleName + "'. Re-run with --force to approve requested permissions.");
+        }
 
-    String answer = console.readLine("Allow these permissions? (y/N): ");
-    if (answer == null || (!answer.trim().equalsIgnoreCase("y") && !answer.trim().equalsIgnoreCase("yes"))) {
-        throw new IOException("Permission approval denied for module '" + moduleName + "'.");
+        String answer = console.readLine("Allow these permissions? (y/N): ");
+        if (answer == null || (!answer.trim().equalsIgnoreCase("y") && !answer.trim().equalsIgnoreCase("yes"))) {
+            throw new IOException("Permission approval denied for module '" + moduleName + "'.");
+        }
     }
 
     ObjectNode updatedGrant = mapper.createObjectNode();
@@ -314,9 +317,12 @@ private static ObjectNode loadSettingsRoot(ObjectMapper mapper, Path settingsFil
     private static void initModule(String moduleName, boolean gitInit, boolean noGitInit) throws IOException {
         if (moduleName == null || moduleName.trim().isEmpty()) {
             // Interactive mode - ask for module name
-            Scanner scanner = new Scanner(System.in);
-            System.out.print("Enter module name: ");
-            moduleName = scanner.nextLine().trim();
+            moduleName = readLineFromConsole("Enter module name: ");
+            if (moduleName == null) {
+                System.err.println("Module name is required when running non-interactively.");
+                System.err.println("Usage: lucli module init <MODULE_NAME>");
+                System.exit(1);
+            }
             if (moduleName.isEmpty()) {
                 System.err.println("Module name cannot be empty.");
                 System.exit(1);
@@ -382,9 +388,10 @@ private static ObjectNode loadSettingsRoot(ObjectMapper mapper, Path settingsFil
         boolean shouldInit = gitInit;
 
         if (!gitInit && interactive) {
-            System.out.print("Initialize a git repository in this module directory? (Y/n): ");
-            Scanner scanner = new Scanner(System.in);
-            String answer = scanner.nextLine().trim();
+            String answer = readLineFromConsole("Initialize a git repository in this module directory? (Y/n): ");
+            if (answer == null) {
+                answer = "";
+            }
             shouldInit = answer.isEmpty() || answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes");
         }
 
@@ -747,6 +754,11 @@ public static void installModule(String moduleName, String gitUrl, String explic
      * Install a module with optional install alias/local module name override.
      */
 public static void installModule(String moduleName, String installName, String gitUrl, String explicitRef, boolean force) throws Exception {
+        installModule(moduleName, installName, gitUrl, explicitRef, force, force);
+    }
+
+    private static void installModule(String moduleName, String installName, String gitUrl, String explicitRef,
+                                      boolean force, boolean autoApprovePermissions) throws Exception {
         String requestedModuleName = normalizeModuleName(moduleName);
         String requestedInstallName = normalizeModuleName(installName);
 
@@ -854,7 +866,7 @@ public static void installModule(String moduleName, String installName, String g
             }
 
             ModuleConfig sourceConfig = ModuleConfig.load(sourceDir);
-            ensureModulePermissionsGranted(targetModuleName, sourceConfig);
+            ensureModulePermissionsGranted(targetModuleName, sourceConfig, autoApprovePermissions);
 
             Path modulesDir = getModulesDirectory();
             Path targetDir = modulesDir.resolve(targetModuleName);
@@ -994,6 +1006,19 @@ public static void installModule(String moduleName, String installName, String g
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * Read a line from the system console. Returns null when no console is available
+     * or when end-of-input is encountered.
+     */
+    private static String readLineFromConsole(String prompt) {
+        java.io.Console console = System.console();
+        if (console == null) {
+            return null;
+        }
+        String value = console.readLine(prompt);
+        return value == null ? null : value.trim();
     }
     
     /**
@@ -1198,7 +1223,7 @@ public static void installModule(String moduleName, String installName, String g
         }
 
         // Ensure force is enabled for updates regardless of user flag
-        installModule(moduleName, effectiveUrl, effectiveRef, true);
+        installModule(moduleName, null, effectiveUrl, effectiveRef, true, force);
     }
 
     /**

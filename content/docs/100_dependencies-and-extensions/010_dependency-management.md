@@ -112,6 +112,42 @@ Behaviour:
 - When `dependencySettings.useLockFile` is `true`, writes a normalized record for each dependency into `lucee-lock.json` (including version, source, install path, and, for extensions, their Lucee ID).
 - Prints the `LUCEE_EXTENSIONS` value that will be set when the server starts, built from all locked extension dependencies.
 
+### Dependency `mapping` → Lucee mapping behavior
+
+When a dependency declares a `mapping` in `lucee.json`, LuCLI materializes that as a Lucee mapping in the effective `.CFConfig.json` used at server startup.
+
+Example:
+
+```json
+{
+  "dependencies": {
+    "my-framework": {
+      "type": "cfml",
+      "version": "4.3.0",
+      "installPath": "vendor/my-framework",
+      "mapping": "/framework"
+    }
+  }
+}
+```
+
+Effective Lucee mapping behavior:
+
+- Virtual mapping keys are normalized with a trailing slash (for example, `/framework` becomes `/framework/`).
+- `installPath` is resolved to an absolute physical path relative to the project directory when it is not already absolute.
+- Mappings can come from both `dependencies` and `devDependencies`.
+- If a dependency also exists in `lucee-lock.json`, locked install metadata is used as the highest-precedence source when available.
+
+To inspect the realized mappings:
+
+```bash
+# Preview effective Lucee config (including generated dependency mappings)
+lucli server start --dry-run --include-lucee
+
+# Output effective Lucee CFConfig JSON directly
+lucli server config get configuration
+```
+
 ### Nested dependency projects
 
 When a dependency's install directory contains its own `lucee.json`, LuCLI treats it as a nested project and can install its dependencies as well.
@@ -285,4 +321,5 @@ lucli server start enableLucee=false monitoring.enabled=false urlRewrite.enabled
 lucli server start port=8081 openBrowser=false
 ```
 
-These overrides are persisted back into `lucee.json` so that subsequent `lucli server start` calls reuse the same configuration.
+These overrides are runtime-only for that invocation and do not modify `lucee.json`.
+To persist configuration changes, use `lucli server config set ...`.

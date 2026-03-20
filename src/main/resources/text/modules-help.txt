@@ -19,7 +19,7 @@ Install/Add Options:
   -u, --url <url>            Git URL to install from (supports #ref suffix)
   -r, --ref <ref>            Git ref (branch/tag/commit) to install
   -n, --name <slug>          Local module name/alias override (letters, numbers, - and _)
-  -f, --force                Overwrite existing module directory
+  -f, --force                Overwrite existing module directory and auto-approve module permissions
 
 Examples:
   lucli modules                          # List all modules

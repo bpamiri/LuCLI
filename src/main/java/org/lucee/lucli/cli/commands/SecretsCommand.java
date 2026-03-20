@@ -1,6 +1,7 @@
 package org.lucee.lucli.cli.commands;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
@@ -9,6 +10,7 @@ import org.lucee.lucli.StringOutput;
 import org.lucee.lucli.LuCLI;
 import org.lucee.lucli.paths.LucliPaths;
 import org.lucee.lucli.secrets.LocalSecretStore;
+import org.lucee.lucli.secrets.LucliSecretProviderSupport;
 import org.lucee.lucli.secrets.SecretStore;
 import org.lucee.lucli.secrets.SecretStoreException;
 
@@ -49,17 +51,34 @@ public class SecretsCommand implements Callable<Integer> {
     static Path getDefaultStorePath() {
         return LucliPaths.resolve().secretsStoreFile();
     }
+    static String selectedProvider() {
+        return LucliSecretProviderSupport.getSelectedProviderName();
+    }
 
-    static char[] readPassphrase(char[] provided) throws Exception {
-        if (provided != null && provided.length > 0) {
-            return provided;
+    static boolean selectedProviderIsLocal() {
+        return LucliSecretProviderSupport.isLocalProviderName(selectedProvider());
+    }
+
+    static int unsupportedWriteProvider(String operation) {
+        String provider = selectedProvider();
+        System.err.println(
+            "Provider '" + provider + "' does not support '" + operation + "' from lucli secrets.\n" +
+            "Switch to '" + LucliSecretProviderSupport.LOCAL_PROVIDER_NAME + "' with:\n" +
+            "  lucli secrets provider use " + LucliSecretProviderSupport.LOCAL_PROVIDER_NAME
+        );
+        return 1;
+    }
+
+    static char[] readLocalPassphrase(char[] provided, String prompt) throws Exception {
+        char[] passphrase = LucliSecretProviderSupport.resolvePassphrase(provided, prompt);
+        if (passphrase == null || passphrase.length == 0) {
+            throw new IllegalStateException(
+                "No passphrase available for local secret store. Set " +
+                LucliSecretProviderSupport.DEFAULT_PASSPHRASE_ENV +
+                " or run with an interactive console."
+            );
         }
-        java.io.Console console = System.console();
-        if (console == null) {
-            throw new IllegalStateException("No console available for secure passphrase input");
-        }
-        char[] first = console.readPassword("Enter secrets passphrase: ");
-        return first;
+        return passphrase;
     }
 
     static LocalSecretStore createStore(char[] passphrase) throws SecretStoreException {
@@ -77,6 +96,12 @@ public class SecretsCommand implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
+            if (!selectedProviderIsLocal()) {
+                StringOutput.Quick.warning(
+                    "Selected provider is '" + selectedProvider() + "'. " +
+                    "Initializing local store for '" + LucliSecretProviderSupport.LOCAL_PROVIDER_NAME + "'."
+                );
+            }
             Path storePath = getDefaultStorePath();
             if (java.nio.file.Files.exists(storePath) && !reset) {
                 System.err.println("Secret store already exists at " + storePath + ". Use --reset to recreate it (will delete existing secrets).");
@@ -119,12 +144,15 @@ public class SecretsCommand implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
+            if (!selectedProviderIsLocal()) {
+                return unsupportedWriteProvider("set");
+            }
             java.io.Console console = System.console();
             if (console == null) {
                 System.err.println("No console available to read secret value securely.");
                 return 1;
             }
-            char[] passphrase = readPassphrase(null);
+            char[] passphrase = readLocalPassphrase(null, "Enter secrets passphrase: ");
             char[] value = console.readPassword("Enter secret value for '%s': ", name);
             try {
                 SecretStore store = createStore(passphrase);
@@ -146,7 +174,10 @@ public class SecretsCommand implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
-            char[] passphrase = readPassphrase(null);
+            if (!selectedProviderIsLocal()) {
+                return unsupportedWriteProvider("list");
+            }
+            char[] passphrase = readLocalPassphrase(null, "Enter secrets passphrase: ");
             try {
                 SecretStore store = createStore(passphrase);
                 List<SecretStore.SecretMetadata> all = store.list();
@@ -180,6 +211,9 @@ public class SecretsCommand implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
+            if (!selectedProviderIsLocal()) {
+                return unsupportedWriteProvider("rm");
+            }
             if (!force) {
                 java.io.Console console = System.console();
                 if (console == null) {
@@ -192,7 +226,7 @@ public class SecretsCommand implements Callable<Integer> {
                     return 0;
                 }
             }
-            char[] passphrase = readPassphrase(null);
+            char[] passphrase = readLocalPassphrase(null, "Enter secrets passphrase: ");
             try {
                 SecretStore store = createStore(passphrase);
                 store.delete(name);
@@ -223,25 +257,50 @@ public class SecretsCommand implements Callable<Integer> {
                 System.err.println("By default, 'lucli secrets get' does not print raw values. Use --show if you really need to see it.");
                 return 1;
             }
-            char[] passphrase = readPassphrase(null);
-            try {
-                SecretStore store = createStore(passphrase);
-                Optional<char[]> value = store.get(name);
-                if (value.isEmpty()) {
-                    System.err.println("Secret '" + name + "' not found.");
+            String provider = selectedProvider();
+            if (LucliSecretProviderSupport.isLocalProviderName(provider)) {
+                char[] passphrase = readLocalPassphrase(null, "Enter secrets passphrase: ");
+                try {
+                    SecretStore store = createStore(passphrase);
+                    Optional<char[]> value = store.get(name);
+                    if (value.isEmpty()) {
+                        System.err.println("Secret '" + name + "' not found.");
+                        return 1;
+                    }
+                    // Intentionally print directly without additional formatting to reduce risk of logs copying
+                    System.out.println(new String(value.get()));
+                    return 0;
+                } catch (SecretStoreException e) {
+                    System.err.println("Failed to retrieve secret: " + e.getMessage());
                     return 1;
                 }
-                // Intentionally print directly without additional formatting to reduce risk of logs copying
-                System.out.println(new String(value.get()));
+            }
+
+            try {
+                String value = LucliSecretProviderSupport.readSecretViaLuceeProvider(provider, name);
+                if (value == null) {
+                    System.err.println("Secret '" + name + "' not found for provider '" + provider + "'.");
+                    return 1;
+                }
+                System.out.println(value);
                 return 0;
-            } catch (SecretStoreException e) {
-                System.err.println("Failed to retrieve secret: " + e.getMessage());
+            } catch (Exception e) {
+                System.err.println("Failed to retrieve secret from provider '" + provider + "': " + e.getMessage());
                 return 1;
             }
         }
     }
 
-    @Command(name = "provider", description = "Manage secret providers")
+    @Command(
+        name = "provider",
+        description = "Manage secret providers",
+        subcommands = {
+            ProviderCommand.ListProvidersCommand.class,
+            ProviderCommand.UseProviderCommand.class,
+            ProviderCommand.CurrentProviderCommand.class,
+            picocli.CommandLine.HelpCommand.class
+        }
+    )
     static class ProviderCommand implements Callable<Integer> {
 
         @ParentCommand
@@ -252,14 +311,56 @@ public class SecretsCommand implements Callable<Integer> {
             new picocli.CommandLine(this).usage(System.out);
             return 0;
         }
+        @Command(name = "list", description = "List known/available secret providers")
+        static class ListProvidersCommand implements Callable<Integer> {
 
-        @Command(name = "list", description = "List available secret providers")
-        public int listProviders() {
-            System.out.println("Available secret providers:");
-            System.out.println("- local (encrypted file under ~/.lucli/secrets/local.json)");
-            System.out.println();
-            System.out.println("More providers coming soon.");
-            return 0;
+            @Override
+            public Integer call() {
+                String selected = selectedProvider();
+                System.out.println("Selected provider: " + selected);
+                System.out.println();
+                System.out.println("Known providers:");
+                System.out.println("- " + LucliSecretProviderSupport.LOCAL_PROVIDER_NAME +
+                    " (LuCLI encrypted local store)");
+
+                if (Files.exists(getDefaultStorePath())) {
+                    System.out.println("  local store file: " + getDefaultStorePath());
+                } else {
+                    System.out.println("  local store file: (not initialized)");
+                }
+
+                if (!LucliSecretProviderSupport.isLocalProviderName(selected)) {
+                    System.out.println("- " + selected + " (selected; resolved via Lucee SecretProviderGet)");
+                }
+                System.out.println();
+                System.out.println("Tip: set provider with `lucli secrets provider use <name>`.");
+                return 0;
+            }
+        }
+
+        @Command(name = "use", description = "Set selected secret provider in ~/.lucli/settings.json")
+        static class UseProviderCommand implements Callable<Integer> {
+
+            @Parameters(index = "0", paramLabel = "NAME", description = "Provider name to use")
+            private String providerName;
+
+            @Override
+            public Integer call() {
+                LucliSecretProviderSupport.setSelectedProviderName(providerName);
+                String normalized = LucliSecretProviderSupport.getSelectedProviderName();
+                StringOutput.Quick.success("Selected secret provider set to '" + normalized + "'.");
+                return 0;
+            }
+        }
+
+        @Command(name = "current", description = "Show currently selected secret provider")
+        static class CurrentProviderCommand implements Callable<Integer> {
+
+            @Override
+            public Integer call() {
+                System.out.println(LucliSecretProviderSupport.getSelectedProviderName());
+                return 0;
+            }
         }
     }
 }

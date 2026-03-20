@@ -3,11 +3,22 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **Runtime CWD Sync + Local Component Resolution:** LuCLI now tracks effective runtime CWD across terminal and `.lucli` execution flows, refreshes Lucee `/cwd` mappings before eval, and fixes `cd` + `cfml new LocalComponent()` / relative `run` behavior in command scripts.
+- **URL Rewrite Direct CFML Bypass:** Tomcat `rewrite.config` now preserves direct `.cfm` / `.cfc` / `.cfml` requests while still routing framework-style paths through the configured router file, with integration tests and harness cleanup updates to validate this behavior.
+- **Docs: LuCLI Command Scripts Terminology:** Documentation now standardizes `.lucli` / `.luc` automation files as “LuCLI command scripts,” adds a dedicated guide, and updates cross-links from CFML execution and CLI basics pages.
+- **One-Shot Server Overrides No Longer Persist to `lucee.json`:** `lucli server start` / `lucli server run` now apply invocation overrides (including bare `key=value`, `--port`, `--webroot`, and `--enable-lucee` / `--disable-lucee`) in memory for that run only, instead of mutating your project config file.
+- **CFConfig Path Normalization + Legacy Compatibility:** Standardized server CFConfig handling to `~/.lucli/<server>/context/.CFConfig.json` (removing the duplicated `lucee-server` path segment), while still reading legacy locations when present and cleaning up old nested files/directories after migration.
+- **Script Argument Variables (`ARGS`, `ARGV`, `__namedArguments`):** CFML scripts (`.cfs`, `.cfm`) now have access to `ARGS` (a struct with both numeric positional keys and named `key=value` entries), `ARGV` (an array with the script filename as element 0 followed by raw args), and `__namedArguments` (a map of only the named key=value arguments). The `__env` / `ENV` binding also now includes variables set via `set` in the parent `.lucli` script.
+- **`set` Variable Propagation to External Commands:** Variables defined via `set VAR=value` in `.lucli` scripts are now merged into the environment of external child processes (e.g. shell commands, `env`, `curl`). Previously they were only visible to the embedded CFML engine context.
+- **Fix: `lucli module init` Wizard Error:** Fixed an interactive prompt issue where module creation could fail with `❌ Error: No line found` after entering module details.
+- **AI Config Quiet Mode:** Added `--quiet` to `lucli ai config add` to suppress printing imported config payload output, making CI logs safer.
+
 ## 0.2.23
+
  - **Bootstrap Installers + Download UX:** Added cross-platform bootstrap installers (`install.sh` and `install.ps1`) for one-line install flows (`curl ... | sh` and `irm ... | iex`), published as release assets, and documented in README/install docs. Updated the download page with copyable install commands, pinned-version examples, and automatic pinned-version updates from the latest release (with release workflow stamping).
  - **Adding JQ and Curl to docker image**  - this allows us to use common tools alongside with lucli in pipelines
  - **Fix: Module Install with `--rev` on Branch Names:** Fixed `modules install --rev <branch>` failing when git is not available. You can now install modules from both tags and branches in non-git environments.
- - **Fix: Module Command Prompt Input Handling:** Stopped closing `System.in` in interactive module name prompts (`module` and `modules init`) to prevent follow-up terminal input from breaking after prompt use.
+ - **`.lucli` Output Redirection:** Added script-level output redirection support in `.lucli` files using `>` (overwrite) and `>>` (append), so command/module output can be routed directly to files during automation runs.
  - **Windows Bat File fixes**
  - **MCP Server for Modules:** Added `lucli mcp <module>` to run a per-module MCP server over stdio, exposing a module’s public functions as MCP tools (with JSON schema-derived input). 
  - **AI Command (`lucli ai`) Enhancements:**
@@ -19,6 +30,10 @@ All notable changes to this project will be documented in this file.
    - Added provider listing from Lucee CFConfig (`lucli ai list` / `lucli ai config list`) and compatibility handling for `--refresh`.
    - Added secret key masking by default in list/config output, with explicit `--show` to reveal full values when needed.
    - Updated prompt UX to support repeatable `--image`, rules via `--rules-file` / `--rules-folder`, and clearer instruction composition behavior.
+   - Added `@file` support for `--text` so prompt task content can be loaded directly from files.
+   - Added `lucli ai prompt --dry-run` to print the fully resolved prompt payload/composed question without sending a provider request.
+   - Added `lucli ai prompt --output-file <path>` support to persist rendered prompt responses (including `--json` and dry-run output), with overwrite protection via `--force`.
+   - Fixed `--system @file` / `--text @file` handling by disabling picocli `@argfile` expansion, so file paths are consumed literally and full file contents are loaded as intended.
  - **Module Runtime Permissions + Env/Secrets Resolution:**
    - Added module metadata keys `permissions.env` and `permissions.secrets` to declare runtime env/secret aliases.
    - Added shorthand compatibility arrays `envVars` and `secrets` (treated as required aliases).

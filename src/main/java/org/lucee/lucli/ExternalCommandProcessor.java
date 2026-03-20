@@ -160,6 +160,9 @@ public class ExternalCommandProcessor {
             ProcessBuilder pb = new ProcessBuilder(commandParts);
             pb.directory(fileSystemProcessor.getFileSystemState().getCurrentWorkingDirectory().toFile());
             pb.redirectErrorStream(true); // Merge stderr with stdout
+            if (LuCLI.scriptEnvironment != null && !LuCLI.scriptEnvironment.isEmpty()) {
+                pb.environment().putAll(LuCLI.scriptEnvironment);
+            }
             
             Process process = pb.start();
             

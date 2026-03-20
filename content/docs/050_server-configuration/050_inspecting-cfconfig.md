@@ -14,7 +14,7 @@ lucli system inspect --lucee
 This reads:
 
 ```text
-~/.lucli/lucee-server/lucee-server/context/.CFConfig.json
+~/.lucli/lucee-server/context/.CFConfig.json
 ```
 
 and prints it as pretty-formatted JSON.

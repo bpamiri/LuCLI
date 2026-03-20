@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Scanner;
 import java.util.concurrent.Callable;
 
 import org.lucee.lucli.LuCLI;
@@ -54,9 +53,12 @@ public class ModulesInitCommandImpl implements Callable<Integer> {
     private void initModule() throws IOException {
         // Handle interactive mode if module name not provided
         if (moduleName == null || moduleName.trim().isEmpty()) {
-            Scanner scanner = new Scanner(System.in);
-            System.out.print("Enter module name: ");
-            moduleName = scanner.nextLine().trim();
+            moduleName = readLineFromConsole("Enter module name: ");
+            if (moduleName == null) {
+                System.err.println("Module name is required when running non-interactively.");
+                System.err.println("Usage: lucli module init <MODULE_NAME>");
+                System.exit(1);
+            }
             if (moduleName.isEmpty()) {
                 System.err.println("Module name cannot be empty.");
                 System.exit(1);
@@ -120,9 +122,10 @@ public class ModulesInitCommandImpl implements Callable<Integer> {
         boolean shouldInit = gitInit;
 
         if (!gitInit && interactive) {
-            System.out.print("Initialize a git repository in this module directory? (Y/n): ");
-            Scanner scanner = new Scanner(System.in);
-            String answer = scanner.nextLine().trim();
+            String answer = readLineFromConsole("Initialize a git repository in this module directory? (Y/n): ");
+            if (answer == null) {
+                answer = "";
+            }
             shouldInit = answer.isEmpty() || answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes");
         }
 
@@ -277,5 +280,18 @@ public class ModulesInitCommandImpl implements Callable<Integer> {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * Read a line from the system console. Returns null when no console is available
+     * or when end-of-input is encountered.
+     */
+    private String readLineFromConsole(String prompt) {
+        java.io.Console console = System.console();
+        if (console == null) {
+            return null;
+        }
+        String value = console.readLine(prompt);
+        return value == null ? null : value.trim();
     }
 }

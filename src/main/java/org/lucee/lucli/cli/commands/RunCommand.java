@@ -73,6 +73,9 @@ public class RunCommand implements Callable<Integer> {
         }
 
         Path path = Paths.get(scriptPath);
+        if (!path.isAbsolute()) {
+            path = LuCLI.getEffectiveRuntimeCwd().resolve(path).normalize();
+        }
         if (!Files.exists(path)) {
             StringOutput.Quick.error("File not found: " + scriptPath);
             return 1;

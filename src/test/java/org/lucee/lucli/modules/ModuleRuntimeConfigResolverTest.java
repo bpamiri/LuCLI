@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.lucee.lucli.LuCLI;
@@ -22,6 +23,13 @@ public class ModuleRuntimeConfigResolverTest {
 
     private final Map<String, String> originalScriptEnv = new HashMap<>(LuCLI.scriptEnvironment);
     private final String originalLucliHome = System.getProperty("lucli.home");
+    private String originalUserHome;
+
+    @BeforeEach
+    void setup() {
+        originalUserHome = System.getProperty("user.home");
+        System.setProperty("user.home", tempDir.toString());
+    }
 
     @AfterEach
     void cleanup() {
@@ -31,6 +39,11 @@ public class ModuleRuntimeConfigResolverTest {
             System.clearProperty("lucli.home");
         } else {
             System.setProperty("lucli.home", originalLucliHome);
+        }
+        if (originalUserHome == null) {
+            System.clearProperty("user.home");
+        } else {
+            System.setProperty("user.home", originalUserHome);
         }
     }
 

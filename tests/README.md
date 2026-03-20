@@ -18,6 +18,22 @@ SKIP_SERVER_TESTS=1 ./tests/test-all.sh
 SKIP_COMPREHENSIVE=1 SKIP_SERVER_TESTS=1 ./tests/test-all.sh
 ```
 
+## Run all checks before push
+
+Enable the versioned git hooks once per clone:
+
+```bash
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-push .githooks/commit-msg
+```
+
+After that, every `git push` will run:
+
+```bash
+mvn clean test
+./tests/test-all.sh
+```
+
 ## Test Organization
 
 ### Primary Test Runner

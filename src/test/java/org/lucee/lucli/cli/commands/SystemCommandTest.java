@@ -81,7 +81,7 @@ class SystemCommandTest {
 
     @Test
     void systemInspectLuceePrettyPrintsCfConfig() throws Exception {
-        Path cfConfigPath = tempDir.resolve("lucli-home/lucee-server/lucee-server/context/.CFConfig.json");
+        Path cfConfigPath = tempDir.resolve("lucli-home/lucee-server/context/.CFConfig.json");
         Files.createDirectories(cfConfigPath.getParent());
         Files.writeString(
             cfConfigPath,

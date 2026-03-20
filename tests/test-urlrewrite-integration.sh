@@ -58,8 +58,8 @@ cleanup() {
     echo "  Removed test files"
 }
 
-# Set up cleanup on exit (but not on normal completion)
-trap 'cleanup' INT TERM
+# Set up cleanup on exit
+trap 'cleanup' EXIT INT TERM
 
 # Check prerequisites
 print_status "Checking URL rewrite test prerequisites..."
@@ -115,10 +115,12 @@ cat > index.cfm << 'EOF'
 <cfscript>
     // Simple router for testing URL rewrite functionality
     pathInfo = cgi.path_info ?: "";
-    
-    // Remove leading slash if present
-    if (left(pathInfo, 1) == "/") {
-        pathInfo = right(pathInfo, len(pathInfo) - 1);
+
+    // Normalize root and remove leading slash safely
+    if (pathInfo == "/") {
+        pathInfo = "";
+    } else if (left(pathInfo, 1) == "/") {
+        pathInfo = mid(pathInfo, 2, len(pathInfo) - 1);
     }
     
     // Default to "home" if path is empty

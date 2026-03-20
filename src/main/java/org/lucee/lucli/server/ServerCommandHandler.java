@@ -245,8 +245,8 @@ public class ServerCommandHandler {
                 // look like a key=value override, treat it as the project directory.
                 projectDir = Paths.get(args[i]);
             } else if (!args[i].startsWith("-") && args[i].contains("=")) {
-                // Treat bare key=value arguments as configuration overrides that should
-                // be applied to lucee.json before starting the server.
+                // Treat bare key=value arguments as one-shot configuration overrides
+                // for this invocation only (does not persist to lucee.json).
                 configOverrides.add(args[i]);
             }
         }
@@ -262,31 +262,8 @@ public class ServerCommandHandler {
             return formatOutput("❌ --source/--dest are only supported with --create-config.", true);
         }
         
-        // Apply any configuration overrides to lucee.json before starting the server.
-        if (!sandbox && (!configOverrides.isEmpty() || portOverride != null || enableLuceeOverride != null)) {
-            String cfgFile = configFileName != null ? configFileName : "lucee.json";
-            LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(projectDir, cfgFile);
-            ServerConfigHelper configHelper = new ServerConfigHelper();
-            for (String kv : configOverrides) {
-                if (kv == null || !kv.contains("=")) {
-                    continue;
-                }
-                String[] parts = kv.split("=", 2);
-                String key = parts[0].trim();
-                String value = parts.length > 1 ? parts[1].trim() : "";
-                if (!key.isEmpty()) {
-                    configHelper.setConfigValue(config, key, value);
-                }
-            }
-            if (portOverride != null) {
-                config.port = portOverride;
-            }
-            if (enableLuceeOverride != null) {
-                config.enableLucee = enableLuceeOverride.booleanValue();
-            }
-            Path configFile = projectDir.resolve(configFileName != null ? configFileName : "lucee.json");
-            LuceeServerConfig.saveConfig(config, configFile);
-        }
+        LuceeServerManager.StartConfigOverrides startConfigOverrides =
+            buildStartConfigOverrides(configOverrides, webrootOverride, portOverride, enableLuceeOverride);
         
         // Load final realized config for dry-run or actual startup
         String cfgFile = configFileName != null ? configFileName : "lucee.json";
@@ -303,21 +280,8 @@ public class ServerCommandHandler {
             }
         }
 
-        // Apply one-shot webroot override (does not persist to lucee.json)
-        if (webrootOverride != null && !webrootOverride.trim().isEmpty()) {
-            finalConfig.webroot = webrootOverride.trim();
-        }
-        
-        // Apply explicit Lucee enable/disable override, if provided
-        if (enableLuceeOverride != null) {
-            finalConfig.enableLucee = enableLuceeOverride.booleanValue();
-            try {
-                Path configPath = projectDir.resolve(cfgFile);
-                LuceeServerConfig.saveConfig(finalConfig, configPath);
-            } catch (IOException e) {
-                System.err.println("Warning: Failed to persist enableLucee override to " + cfgFile + ": " + e.getMessage());
-            }
-        }
+        // Apply one-shot CLI overrides in memory for this invocation.
+        LuceeServerManager.applyStartConfigOverrides(finalConfig, startConfigOverrides);
         
         // If create-config is requested, materialize the server configuration and exit without starting.
         if (createConfig) {
@@ -570,7 +534,8 @@ public class ServerCommandHandler {
                 customName,
                 agentOverrides,
                 environment,
-                cfgFile
+                cfgFile,
+                startConfigOverrides
             );
 
             // If this command created a new lucee.json and the user supplied a
@@ -763,8 +728,8 @@ public class ServerCommandHandler {
                 // look like a key=value override, treat it as the project directory.
                 projectDir = Paths.get(arg);
             } else if (!arg.startsWith("-") && arg.contains("=")) {
-                // Treat bare key=value arguments as configuration overrides that should
-                // be applied to the configuration file before starting the server.
+                // Treat bare key=value arguments as one-shot configuration overrides
+                // for this invocation only (does not persist to lucee.json).
                 configOverrides.add(arg);
             }
         }
@@ -774,27 +739,8 @@ public class ServerCommandHandler {
             return formatOutput("❌ --sandbox cannot be combined with --dry-run.", true);
         }
         
-        // Apply any configuration overrides to the selected configuration file before starting the server,
-        // but only in normal (non-sandbox) mode so sandbox does not create/write lucee.json.
-        if (!sandbox && (!configOverrides.isEmpty() || portOverride != null || enableLuceeOverride != null)) {
-            String cfgFile = configFileName != null ? configFileName : "lucee.json";
-            LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(projectDir, cfgFile);
-            ServerConfigHelper configHelper = new ServerConfigHelper();
-            for (String kv : configOverrides) {
-                String[] parts = kv.split("=", 2);
-                if (parts.length == 2) {
-                    configHelper.setConfigValue(config, parts[0], parts[1]);
-                }
-            }
-            if (portOverride != null) {
-                config.port = portOverride;
-            }
-            if (enableLuceeOverride != null) {
-                config.enableLucee = enableLuceeOverride.booleanValue();
-            }
-            Path configFile = projectDir.resolve(cfgFile);
-            LuceeServerConfig.saveConfig(config, configFile);
-        }
+        LuceeServerManager.StartConfigOverrides startConfigOverrides =
+            buildStartConfigOverrides(configOverrides, webrootOverride, portOverride, enableLuceeOverride);
         
         // If no agent-related flags were actually set, avoid passing a non-null overrides object
         if (!agentOverrides.disableAllAgents &&
@@ -816,9 +762,7 @@ public class ServerCommandHandler {
                     return formatOutput("❌ " + e.getMessage(), true);
                 }
             }
-            if (webrootOverride != null && !webrootOverride.trim().isEmpty()) {
-                finalConfig.webroot = webrootOverride.trim();
-            }
+            LuceeServerManager.applyStartConfigOverrides(finalConfig, startConfigOverrides);
             
             StringBuilder result = new StringBuilder();
             result.append("📋 DRY RUN: Server configuration that would be used:\n\n");
@@ -853,10 +797,8 @@ public class ServerCommandHandler {
                         agentOverrides, environment, webrootOverride, portOverride, enableLuceeOverride);
             } else {
                 String cfgFile = configFileName != null ? configFileName : "lucee.json";
-                // For run, webrootOverride is handled inside LuceeServerManager when reading config;
-                // here we just pass through the arguments-driven overrides.
                 serverManager.runServerForeground(projectDir, versionOverride, forceReplace, customName,
-                        agentOverrides, environment, cfgFile);
+                        agentOverrides, environment, cfgFile, startConfigOverrides);
             }
             return ""; // Return empty string since output is streamed to console
             
@@ -884,6 +826,19 @@ public class ServerCommandHandler {
             
             return formatOutput(result.toString(), true);
         }
+    }
+
+    private LuceeServerManager.StartConfigOverrides buildStartConfigOverrides(
+            List<String> configOverrides,
+            String webrootOverride,
+            Integer portOverride,
+            Boolean enableLuceeOverride) {
+        LuceeServerManager.StartConfigOverrides overrides = new LuceeServerManager.StartConfigOverrides();
+        overrides.configOverrides = configOverrides;
+        overrides.webrootOverride = webrootOverride;
+        overrides.portOverride = portOverride;
+        overrides.enableLuceeOverride = enableLuceeOverride;
+        return overrides.isEmpty() ? null : overrides;
     }
     
     /**

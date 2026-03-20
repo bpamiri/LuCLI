@@ -1,6 +1,9 @@
 ---
 title: LuCLI Documentation
 layout: docs
+description: Official LuCLI documentation for installation, CLI usage, server management, and configuration.
+og_description: Official LuCLI documentation for installation, CLI usage, server management, and configuration.
+og_image: /android-chrome-512x512.png
 ---
 Welcome to the LuCLI docs. This site is organized by **what you want to do**: get started quickly, run CFML from the CLI, manage Lucee servers, and configure projects safely.
 
@@ -26,6 +29,7 @@ If you mainly want to run CFML scripts, components, or modules from the CLI:
 
 - [Shortcuts & Direct CFML Execution](cfml-execution/shortcuts-and-direct-execution/)
 - [Running Scripts and Components](cfml-execution/running-scripts-and-components/)
+- [LuCLI Command Scripts (.lucli/.luc)](cfml-execution/lucli-command-scripts/)
 - [Interactive Terminal & REPL](cfml-execution/interactive-terminal-and-repl/)
 - [CFML Modules](cfml-execution/modules/)
 

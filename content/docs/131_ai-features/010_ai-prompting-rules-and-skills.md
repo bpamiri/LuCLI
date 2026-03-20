@@ -98,6 +98,40 @@ Minimal prompt:
 lucli ai prompt --text "Summarize this in one sentence"
 ```
 
+Prompt text from file:
+
+```bash
+lucli ai prompt --text @./out/context.json
+```
+
+Preview the fully resolved payload without sending:
+
+```bash
+lucli ai prompt \
+  --system @./weekly_review_openai.md \
+  --text @./out/context.json \
+  --dry-run
+```
+
+Write prompt output to a file:
+
+```bash
+lucli ai prompt \
+  --text "Summarize this in JSON" \
+  --json \
+  --output-file ./out/result.json
+```
+
+By default, LuCLI will not overwrite an existing file. Use `--force` to overwrite:
+
+```bash
+lucli ai prompt \
+  --text "Summarize this in JSON" \
+  --json \
+  --output-file ./out/result.json \
+  --force
+```
+
 Prompt with explicit endpoint:
 
 ```bash
