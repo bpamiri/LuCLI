@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -45,7 +44,6 @@ public class LuceeScriptEngine {
     
     // Ensure we only perform BaseModule synchronization once per JVM
     private boolean baseModuleEnsured = false;
-    private volatile Path lastMappedCwd = null;
 
     // Helper methods - moved from LuCLI
     
@@ -59,46 +57,7 @@ public class LuceeScriptEngine {
 
     private void ensureRuntimeCwdContext() throws ScriptException {
         Path effectiveCwd = getEffectiveRuntimeCwd();
-        ensureCwdMapping(effectiveCwd);
         engine.put("__cwd", effectiveCwd.toString());
-    }
-
-    private synchronized void ensureCwdMapping(Path cwd) throws ScriptException {
-        if (cwd == null) {
-            cwd = getEffectiveRuntimeCwd();
-        }
-        cwd = cwd.toAbsolutePath().normalize();
-
-        Path last = lastMappedCwd;
-        if (last != null && last.equals(cwd)) {
-            return;
-        }
-
-        Map<String, Object> rootConfig = new HashMap<>();
-        Map<String, Object> componentMapping = new HashMap<>();
-        componentMapping.put("inspectTemplate", "once");
-        componentMapping.put("physical", cwd.toString());
-        componentMapping.put("archive", "");
-        componentMapping.put("virtual", "/");
-        java.util.List<Map<String, Object>> componentMappings = new java.util.ArrayList<>();
-        componentMappings.add(componentMapping);
-        rootConfig.put("componentMappings", componentMappings);
-
-        // Map<String, Object> mappings = new HashMap<>();
-        // Map<String, Object> cwdMapping = new HashMap<>();
-        // cwdMapping.put("inspectTemplate", "auto");
-        // cwdMapping.put("physical", cwd.toString());
-        // cwdMapping.put("primary", "physical");
-        // cwdMapping.put("toplevel", false);
-        // mappings.put("/", cwdMapping);
-        // rootConfig.put("Mappings", mappings);
-
-        // engine.put("__cwdMappingConfig", rootConfig);
-        // Removing as we dont need it if we use the right dotted path!
-        // engine.eval(
-        //     "configImport(data=__cwdMappingConfig,password=request.SERVERADMINPASSWORD,type=\"server\",flushExistingData=false);"
-        // );
-        lastMappedCwd = cwd;
     }
 
     private String maybePrependCwdImport(String script) {
@@ -554,6 +513,9 @@ public class LuceeScriptEngine {
 
     public Array getComponentMetadata(String componentPackage) throws Exception {
         Timer.start("Get Component Metadata: " + componentPackage);
+
+        // Keep metadata introspection aligned with module execution bootstrap.
+        ensureBaseModuleUpToDate();
         
         // Ensure script context is set up
         setupScriptContext(engine, componentPackage, new String[0]);
@@ -764,7 +726,6 @@ public class LuceeScriptEngine {
             scriptFile = "";
         }
         Path effectiveCwd = getEffectiveRuntimeCwd();
-        ensureCwdMapping(effectiveCwd);
         engine.put("__cwd", effectiveCwd.toString());
         engine.put("__cwd", System.getProperty("user.dir"));
         // Set script file information

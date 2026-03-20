@@ -17,7 +17,7 @@ import picocli.CommandLine.ParentCommand;
 /**
  * Command to execute a script file.
  *
- * Primary use is executing CFML files (.cfm, .cfc, .cfs) as well as delegating
+ * Primary use is executing CFML files (.cfm, .cfs) as well as delegating
  * to the LuCLI script engine for `.lucli` batch scripts. This centralizes the
  * CFML file execution logic so that it is available as a first-class Picocli
  * command ("lucli run") and can also be used by the root-command shortcut
@@ -25,16 +25,14 @@ import picocli.CommandLine.ParentCommand;
  */
 @Command(
     name = "run",
-    description = "Execute a CFML script (.cfm, .cfc, .cfs) or LuCLI script (.lucli)",
+    description = "Execute a CFML script (.cfm, .cfs) or LuCLI script (.lucli)",
     footer = {
         "",
         "Examples:",
         "  lucli run hello.cfm                 # Execute CFML template",
-        "  lucli run SomeComponent.cfc arg1   # Execute component entry point",
         "  lucli run script.cfs arg1 arg2     # Execute CFML script file",
         "  lucli run script.lucli             # Execute LuCLI batch script",
         "  lucli hello.cfm                    # Shortcut for 'lucli run hello.cfm'",
-        "  lucli SomeComponent.cfc arg1       # Shortcut for 'lucli run SomeComponent.cfc arg1'",
         "  lucli script.lucli                 # Shortcut for 'lucli run script.lucli'"
     }
 )
@@ -46,7 +44,7 @@ public class RunCommand implements Callable<Integer> {
     @Parameters(
         index = "0",
         paramLabel = "SCRIPT",
-        description = "Path to CFML script file (.cfm, .cfc, .cfs)"
+        description = "Path to CFML script file (.cfm, .cfs)"
     )
     private String scriptPath;
 
@@ -108,13 +106,9 @@ public class RunCommand implements Callable<Integer> {
             }
         }
         else if (fileName.endsWith(".cfc") ) {
-            try{
-                return engine.executeCFCFile(path.toString(), scriptArgs);
-            } catch(Exception e){
-                StringOutput.Quick.error("Error executing CFML component '" + scriptPath + "': " + e.getMessage());
-                LuCLI.printDebugStackTrace(e);
-                return 1;
-            }
+            StringOutput.Quick.error("Executing .cfc files via 'lucli run' is not supported.");
+            StringOutput.getInstance().println("Use a module entry point instead (e.g. 'lucli modules run <module>').");
+            return 1;
         }
         else if (fileName.endsWith(".cfs") ) {
             try{
@@ -127,7 +121,7 @@ public class RunCommand implements Callable<Integer> {
         }
 
         else {
-            StringOutput.Quick.error("Unsupported script file extension for '" + scriptPath + "'. Supported extensions are .cfm, .cfc, .cfs, and .lucli");
+            StringOutput.Quick.error("Unsupported script file extension for '" + scriptPath + "'. Supported extensions are .cfm, .cfs, and .lucli");
             return 1;
         }
 

@@ -31,10 +31,14 @@ fi
 
 # Bump the patch version in pom.xml (e.g. 0.2.2-SNAPSHOT → 0.2.3-SNAPSHOT)
 # This replicates the version bump that the -Pbinary profile used to do.
-echo "Bumping patch version..."
-mvn -q build-helper:parse-version versions:set \
-    -DnewVersion='${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.nextIncrementalVersion}-SNAPSHOT' \
-    -DgenerateBackupPoms=false
+if [[ "${LUCLI_SKIP_VERSION_BUMP:-false}" == "true" || "${LUCLI_SKIP_VERSION_BUMP:-0}" == "1" ]]; then
+    echo "Skipping patch version bump (LUCLI_SKIP_VERSION_BUMP=${LUCLI_SKIP_VERSION_BUMP})."
+else
+    echo "Bumping patch version..."
+    mvn -q build-helper:parse-version versions:set \
+        -DnewVersion='${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.nextIncrementalVersion}-SNAPSHOT' \
+        -DgenerateBackupPoms=false
+fi
 
 # Build the JAR and binary
 # Use -Dmaven.test.skip=true so Maven does not compile or run tests during this

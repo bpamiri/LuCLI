@@ -38,3 +38,5 @@ test-results.xml
 out/
 Runtimes/
 server_test_*/
+test-*-results.xml
+test-*-results.xml

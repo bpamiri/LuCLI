@@ -303,7 +303,12 @@ public class LuCLI implements Callable<Integer> {
         }
 
         // Check if it's a CFML file (.cfm, .cfc, .cfs)
-        if (file.exists() && (arg.endsWith(".cfm") || arg.endsWith(".cfc") || 
+        if (file.exists() && arg.endsWith(".cfc")) {
+            StringOutput.Quick.error("Executing .cfc files directly is not supported.");
+            StringOutput.getInstance().println("Use a module entry point instead (e.g. 'lucli modules run <module>').");
+            return 1;
+        }
+        if (file.exists() && (arg.endsWith(".cfm") || 
                               arg.endsWith(".cfs") || arg.endsWith(".cfml"))) {
             debug("LuCLI", "Routing to run command: " + arg);
             return executeViaRunCommand(arg, args);
@@ -319,7 +324,7 @@ public class LuCLI implements Callable<Integer> {
         throw new CommandLine.ParameterException(
             spec.commandLine(),
             "Unknown command, file, or module: '" + arg + "'\n" +
-            "  - If it's a file, check the path and extension (.cfm, .cfc, .cfs, .lucli)\n" +
+            "  - If it's a file, check the path and extension (.cfm, .cfs, .lucli)\n" +
             "  - If it's a module, run 'lucli modules list' to see available modules\n" +
             "  - Run 'lucli --help' to see available commands"
         );
