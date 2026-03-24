@@ -34,3 +34,4 @@ Append new entries at the bottom under the appropriate date/session.
 
 - For lightweight AI cost previews, a dependency-free estimate can be composed from three parts: composed text heuristic tokens, JSON envelope overhead tokens, and image tile heuristic tokens; output should explicitly label the result as rough and non-billable.
 - In `.lucli` preprocessing, continuation joining runs before comment stripping; continuation logic must explicitly skip regular `#` comment lines during accumulation or commented-out options can leak into executed commands.
+- In BATS, when passing positional parameters to `bash -c` via `run`, keep the command string single-quoted (for example, `'cd "$1" && java -jar "$2" ...'`); double-quoted strings expand `$1/$2` in the parent test shell first and can silently erase forwarded args like JAR paths.

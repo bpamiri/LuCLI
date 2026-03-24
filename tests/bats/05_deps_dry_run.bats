@@ -98,7 +98,7 @@ EOF
     local root_project
     root_project="$(create_nested_deps_project)"
 
-    run bash -c "cd \"$1\" && java -jar \"$2\" deps install --dry-run" _ "${root_project}" "${LUCLI_JAR}"
+    run bash -c 'cd "$1" && java -jar "$2" deps install --dry-run' _ "${root_project}" "${LUCLI_JAR}"
     assert_success
     assert_output_contains "Would install:"
     [[ "${output}" != *"[Nested:"* ]]
@@ -108,7 +108,7 @@ EOF
     local root_project
     root_project="$(create_nested_deps_project)"
 
-    run bash -c "cd \"$1\" && java -jar \"$2\" deps install --dry-run --include-nested-deps" _ "${root_project}" "${LUCLI_JAR}"
+    run bash -c 'cd "$1" && java -jar "$2" deps install --dry-run --include-nested-deps' _ "${root_project}" "${LUCLI_JAR}"
     assert_success
     assert_output_contains "[Nested: dependencies/nested1"
     assert_output_contains "[Nested: dependencies/nested1/dependencies/nested2"
@@ -118,7 +118,7 @@ EOF
     local root_project
     root_project="$(create_nested_deps_project)"
 
-    run bash -c "cd \"$1\" && java -jar \"$2\" deps install --dry-run --include-nested-deps --env=dev" _ "${root_project}" "${LUCLI_JAR}"
+    run bash -c 'cd "$1" && java -jar "$2" deps install --dry-run --include-nested-deps --env=dev' _ "${root_project}" "${LUCLI_JAR}"
     assert_success
     assert_output_contains "Environment 'dev' not found in nested project"
 }
@@ -127,7 +127,7 @@ EOF
     local root_project
     root_project="$(create_nested_deps_project)"
 
-    run bash -c "cd \"$1\" && java -jar \"$2\" deps install --dry-run --include-nested-deps" _ "${root_project}" "${LUCLI_JAR}"
+    run bash -c 'cd "$1" && java -jar "$2" deps install --dry-run --include-nested-deps' _ "${root_project}" "${LUCLI_JAR}"
     assert_success
     assert_output_contains "maximum nested dependency depth"
 }
