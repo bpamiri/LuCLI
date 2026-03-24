@@ -113,6 +113,19 @@ public class LucliScriptPreprocessor {
         
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
+            String trimmed = line.trim();
+
+            // Regular comments should never become part of an accumulated command.
+            // If we're in a continuation block, skip the comment content but preserve
+            // line numbers by incrementing continuationCount.
+            if (trimmed.startsWith("#") && !isEnvDirective(trimmed)) {
+                if (accumulated.length() > 0) {
+                    continuationCount++;
+                } else {
+                    result.add(line);
+                }
+                continue;
+            }
             String trimmedRight = rtrim(line);
             
             if (trimmedRight.endsWith("\\")) {

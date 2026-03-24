@@ -1,4 +1,5 @@
 package org.lucee.lucli.cli.commands;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 
 import java.io.IOException;
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.imageio.ImageIO;
 
 import org.lucee.lucli.LuCLI;
 import org.lucee.lucli.LuceeScriptEngine;
@@ -582,6 +584,14 @@ public class AiCommand implements Callable<Integer> {
 
         @Option(names = "--dry-run", description = "Show resolved prompt payload and exit without sending request")
         private boolean dryRun;
+        @Option(names = "--estimate", description = "Show rough token/cost estimate and exit without sending request")
+        private boolean estimate;
+        @Option(names = "--assume-output-tokens", defaultValue = "400", description = "Assumed completion tokens used by --estimate")
+        private Integer assumedOutputTokens;
+        @Option(names = "--input-price-per-1m", description = "Optional input token USD price per 1M tokens for --estimate")
+        private Double inputPricePerMillion;
+        @Option(names = "--output-price-per-1m", description = "Optional output token USD price per 1M tokens for --estimate")
+        private Double outputPricePerMillion;
         @Option(names = "--output-file", description = "Write rendered output to file")
         private Path outputFile;
 
@@ -639,6 +649,15 @@ public class AiCommand implements Callable<Integer> {
             request.files = normalizedImages.stream()
                 .map(path -> path.toAbsolutePath().normalize().toString())
                 .collect(Collectors.toList());
+            if (estimate) {
+                PromptEstimate promptEstimate = buildPromptEstimate(
+                    request,
+                    firstNonNull(assumedOutputTokens, Integer.valueOf(400)),
+                    inputPricePerMillion,
+                    outputPricePerMillion
+                );
+                return emitPromptOutput(renderPromptEstimate(promptEstimate, json), outputFile, force);
+            }
 
             if (dryRun) {
                 String dryRunOutput = renderPromptDryRun(request, normalizedRuleFiles, skill, json);
@@ -1203,6 +1222,193 @@ if (isSimpleValue(aiResponse)) {
             output.append(composed);
         }
         return output.toString();
+    }
+
+    private static PromptEstimate buildPromptEstimate(
+        PromptRequest request,
+        Integer assumedOutputTokens,
+        Double inputPricePerMillion,
+        Double outputPricePerMillion
+    ) {
+        PromptEstimate estimate = new PromptEstimate();
+        estimate.endpoint = request.endpoint;
+        estimate.model = request.model;
+        estimate.assumedOutputTokens = Math.max(0, firstNonNull(assumedOutputTokens, Integer.valueOf(400)));
+        estimate.inputPricePerMillion = inputPricePerMillion;
+        estimate.outputPricePerMillion = outputPricePerMillion;
+
+        String composedQuestion = buildComposedQuestionText(request.system, request.text);
+        estimate.composedTextTokens = estimateTokens(composedQuestion);
+        estimate.jsonEnvelopeTokens = estimateJsonEnvelopeTokens(request);
+
+        List<ImageEstimate> imageEstimates = new ArrayList<>();
+        int imageTokens = 0;
+        if (request.files != null) {
+            for (String filePath : request.files) {
+                ImageEstimate imageEstimate = estimateImageTokens(filePath);
+                imageEstimates.add(imageEstimate);
+                imageTokens += imageEstimate.estimatedTokens;
+            }
+        }
+        estimate.images = imageEstimates;
+        estimate.imageTokens = imageTokens;
+
+        estimate.estimatedInputTokens = estimate.composedTextTokens + estimate.jsonEnvelopeTokens + estimate.imageTokens;
+        estimate.estimatedTotalTokens = estimate.estimatedInputTokens + estimate.assumedOutputTokens;
+
+        if (inputPricePerMillion != null && outputPricePerMillion != null) {
+            double inputCost = (estimate.estimatedInputTokens / 1_000_000d) * inputPricePerMillion;
+            double outputCost = (estimate.assumedOutputTokens / 1_000_000d) * outputPricePerMillion;
+            estimate.estimatedCostUsd = inputCost + outputCost;
+        }
+        return estimate;
+    }
+
+    private static String renderPromptEstimate(PromptEstimate estimate, boolean jsonOutput) throws Exception {
+        ObjectNode envelope = MAPPER.createObjectNode();
+        envelope.put("estimate", true);
+        envelope.put("warning", "Rough estimate only. Tokenization and billing vary by provider/model; final billed usage may differ.");
+        envelope.put("endpoint", fallback(estimate.endpoint));
+        if (isBlank(estimate.model)) {
+            envelope.putNull("model");
+        } else {
+            envelope.put("model", estimate.model);
+        }
+        envelope.put("composedTextTokens", estimate.composedTextTokens);
+        envelope.put("jsonEnvelopeTokens", estimate.jsonEnvelopeTokens);
+        envelope.put("imageTokens", estimate.imageTokens);
+        envelope.put("estimatedInputTokens", estimate.estimatedInputTokens);
+        envelope.put("assumedOutputTokens", estimate.assumedOutputTokens);
+        envelope.put("estimatedTotalTokens", estimate.estimatedTotalTokens);
+        if (estimate.inputPricePerMillion == null) {
+            envelope.putNull("inputPricePerMillion");
+        } else {
+            envelope.put("inputPricePerMillion", estimate.inputPricePerMillion);
+        }
+        if (estimate.outputPricePerMillion == null) {
+            envelope.putNull("outputPricePerMillion");
+        } else {
+            envelope.put("outputPricePerMillion", estimate.outputPricePerMillion);
+        }
+        if (estimate.estimatedCostUsd == null) {
+            envelope.putNull("estimatedCostUsd");
+        } else {
+            envelope.put("estimatedCostUsd", estimate.estimatedCostUsd);
+        }
+
+        ArrayNode images = envelope.putArray("images");
+        for (ImageEstimate image : estimate.images) {
+            ObjectNode imageNode = images.addObject();
+            imageNode.put("path", image.path);
+            imageNode.put("estimatedTokens", image.estimatedTokens);
+            if (image.width == null || image.height == null) {
+                imageNode.putNull("width");
+                imageNode.putNull("height");
+            } else {
+                imageNode.put("width", image.width);
+                imageNode.put("height", image.height);
+            }
+            imageNode.put("method", image.method);
+        }
+
+        if (jsonOutput) {
+            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(envelope);
+        }
+
+        StringBuilder output = new StringBuilder();
+        output.append("AI prompt estimate (rough)\n");
+        output.append("  WARNING: Rough estimate only. Final billed usage may differ by provider/model.\n");
+        output.append("  endpoint: ").append(fallback(estimate.endpoint)).append('\n');
+        output.append("  model: ").append(fallback(estimate.model)).append('\n');
+        output.append("  text tokens (composed): ").append(estimate.composedTextTokens).append('\n');
+        output.append("  json envelope tokens: ").append(estimate.jsonEnvelopeTokens).append('\n');
+        output.append("  image tokens: ").append(estimate.imageTokens).append('\n');
+        output.append("  estimated input tokens: ").append(estimate.estimatedInputTokens).append('\n');
+        output.append("  assumed output tokens: ").append(estimate.assumedOutputTokens).append('\n');
+        output.append("  estimated total tokens: ").append(estimate.estimatedTotalTokens).append('\n');
+
+        if (estimate.estimatedCostUsd != null) {
+            output.append("  estimated cost (USD): ").append(String.format(Locale.US, "%.6f", estimate.estimatedCostUsd)).append('\n');
+        } else {
+            output.append("  estimated cost (USD): (set both --input-price-per-1m and --output-price-per-1m to compute)\n");
+        }
+
+        if (!estimate.images.isEmpty()) {
+            output.append("  image breakdown:\n");
+            for (ImageEstimate image : estimate.images) {
+                output.append("    - ").append(image.path).append(": ").append(image.estimatedTokens).append(" tokens");
+                if (image.width != null && image.height != null) {
+                    output.append(" (").append(image.width).append("x").append(image.height).append(")");
+                }
+                output.append(" [").append(image.method).append("]\n");
+            }
+        }
+        return output.toString();
+    }
+
+    private static int estimateJsonEnvelopeTokens(PromptRequest request) {
+        ObjectNode envelope = MAPPER.createObjectNode();
+        envelope.put("endpoint", fallback(request.endpoint));
+        envelope.put("model", fallback(request.model));
+        envelope.put("hasSystem", !isBlank(request.system));
+        envelope.put("hasText", !isBlank(request.text));
+        if (request.temperature == null) {
+            envelope.putNull("temperature");
+        } else {
+            envelope.put("temperature", request.temperature);
+        }
+        if (request.timeoutMillis == null) {
+            envelope.putNull("timeoutMillis");
+        } else {
+            envelope.put("timeoutMillis", request.timeoutMillis);
+        }
+        ArrayNode files = envelope.putArray("files");
+        if (request.files != null) {
+            for (String file : request.files) {
+                files.add(file);
+            }
+        }
+        return estimateTokens(envelope.toString());
+    }
+
+    private static ImageEstimate estimateImageTokens(String filePath) {
+        ImageEstimate estimate = new ImageEstimate();
+        estimate.path = filePath;
+        estimate.method = "fallback";
+        estimate.estimatedTokens = 1105;
+
+        try {
+            BufferedImage image = ImageIO.read(Paths.get(filePath).toFile());
+            if (image == null) {
+                return estimate;
+            }
+            int width = image.getWidth();
+            int height = image.getHeight();
+            int tilesX = (int) Math.ceil(width / 512.0d);
+            int tilesY = (int) Math.ceil(height / 512.0d);
+            int tiles = Math.max(1, tilesX * tilesY);
+            estimate.width = width;
+            estimate.height = height;
+            estimate.estimatedTokens = 85 + (tiles * 170);
+            estimate.method = "512px-tile-heuristic";
+            return estimate;
+        } catch (Exception e) {
+            return estimate;
+        }
+    }
+
+    private static int estimateTokens(String text) {
+        if (isBlank(text)) {
+            return 0;
+        }
+
+        String normalized = text.trim();
+        int characters = normalized.length();
+        int words = normalized.split("\\s+").length;
+
+        double byCharacters = characters / 4.0d;
+        double byWords = words / 0.75d;
+        return Math.max(1, (int) Math.ceil((byCharacters + byWords) / 2.0d));
     }
 
     private static ObjectNode buildPromptDryRunEnvelope(PromptRequest request, List<Path> normalizedRuleFiles, SkillDefinition skill) {
@@ -1889,6 +2095,29 @@ if (isSimpleValue(aiResponse)) {
     static class PromptResult {
         public String text;
         public String json;
+    }
+
+    static class PromptEstimate {
+        public String endpoint;
+        public String model;
+        public int composedTextTokens;
+        public int jsonEnvelopeTokens;
+        public int imageTokens;
+        public int estimatedInputTokens;
+        public int assumedOutputTokens;
+        public int estimatedTotalTokens;
+        public Double inputPricePerMillion;
+        public Double outputPricePerMillion;
+        public Double estimatedCostUsd;
+        public List<ImageEstimate> images = new ArrayList<>();
+    }
+
+    static class ImageEstimate {
+        public String path;
+        public Integer width;
+        public Integer height;
+        public int estimatedTokens;
+        public String method;
     }
 
     static class ProviderDefaults {

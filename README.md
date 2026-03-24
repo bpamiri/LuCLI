@@ -1,10 +1,22 @@
 # 🚀 LuCLI - Lucee Command Line Interface
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![Java 17+](https://img.shields.io/badge/java-17+-blue)]() [![License](https://img.shields.io/badge/license-MIT-green)]() [![Alpha](https://img.shields.io/badge/status-alpha-orange)]
+[![CI](https://github.com/cybersonic/LuCLI/actions/workflows/ci.yml/badge.svg)](https://github.com/cybersonic/LuCLI/actions/workflows/ci.yml)
+[![Release](https://github.com/cybersonic/LuCLI/actions/workflows/release.yml/badge.svg)](https://github.com/cybersonic/LuCLI/actions/workflows/release.yml)
+[![Docs](https://github.com/cybersonic/LuCLI/actions/workflows/static.yml/badge.svg)](https://github.com/cybersonic/LuCLI/actions/workflows/static.yml)
+[![Java 21+](https://img.shields.io/badge/java-21+-blue)](https://adoptium.net/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Alpha](https://img.shields.io/badge/status-alpha-orange)](https://github.com/cybersonic/LuCLI/releases)
 
 ⚠️ **This is an alpha release** - Expect breaking changes and limitations. The API and features may change significantly before v1.0. We appreciate feedback and contributions!
 
 A modern, feature-rich command line interface for Lucee CFML that brings the power of CFML to your terminal. LuCLI integrates the Lucee CFML engine with advanced features like server management, JMX monitoring, module management, and intelligent output processing.
+
+## 🔗 Quick Links
+- [📦 Installation](#-installation)
+- [🚀 Usage Examples](#-usage-examples)
+- [📚 Documentation](#-documentation)
+- [🤝 Contributing](CONTRIBUTING.md)
+- [📦 Releases](https://github.com/cybersonic/LuCLI/releases)
 
 ## ✨ Key Features
 
@@ -12,6 +24,7 @@ A modern, feature-rich command line interface for Lucee CFML that brings the pow
 - **CFML Script Execution**: Run .cfs, .cfm, and .cfc files with full Lucee support
 - **Server Management**: Start, stop, monitor, and manage Lucee server instances  
 - **Module System**: Create and manage reusable CFML modules
+
 ## 📦 Installation
 
 ### Quick Start
@@ -47,7 +60,7 @@ docker run --interactive markdrew/lucli:latest repl
 
 ### Download Options
 Visit the [Releases Page](https://github.com/cybersonic/LuCLI/releases) to download:
-- **lucli.jar** - Universal JAR file (requires Java 17+)
+- **lucli.jar** - Universal JAR file (requires Java 21+)
 - **lucli** - Self-executing binary for Linux/macOS
 - **lucli.bat** - Windows batch file
 - **install.sh** - Automated installation script
@@ -68,6 +81,7 @@ mvn clean package -Pbinary
 ```bash
 docker run markdrew/lucli:latest --version
 ```
+
 ## 🚀 Usage Examples
 
 ### CFML Development
@@ -366,14 +380,14 @@ writeOutput('[ERROR] CFML Error: ' & e.message);
 ## 🛠️ Development
 
 ### Prerequisites
-- Java 17+ (JDK required for building)
+- Java 21+ (JDK required for building)
 - Maven 3.x  
 - Git
 
 ### Building from Source
 ```bash
 # Clone repository
-git clone https://github.com/your-org/lucli.git
+git clone https://github.com/cybersonic/LuCLI.git
 cd lucli
 
 # Build JAR
@@ -558,7 +572,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ```bash
 # Download and try it now
-wget https://github.com/your-org/lucli/releases/latest/download/lucli.jar
+wget https://github.com/cybersonic/LuCLI/releases/latest/download/lucli.jar
 java -jar lucli.jar --version
 
 # Start your first CFML session  
@@ -570,4 +584,4 @@ lucli> cfml "Hello, World!"
 
 **LuCLI** - Making CFML development faster, easier, and more enjoyable from the command line.
 
-*For detailed documentation and examples, explore the documentation/ directory or visit our [GitHub repository](https://github.com/your-org/lucli).*
+*For detailed documentation and examples, explore the documentation/ directory or visit our [GitHub repository](https://github.com/cybersonic/LuCLI).*

@@ -52,6 +52,24 @@ public class LucliScriptPreprocessorTest {
     }
 
     @Test
+    void joinContinuationLines_skipsCommentedLineInsideContinuation() {
+        List<String> input = Arrays.asList(
+            "ai prompt \\",
+            "  --endpoint OpenAI \\",
+            "# --output-file ./out/pr_report.md \\",
+            "  --force --json"
+        );
+
+        List<String> result = LucliScriptPreprocessor.joinContinuationLines(input);
+
+        assertEquals(4, result.size());
+        assertEquals("ai prompt --endpoint OpenAI --force --json", result.get(0));
+        assertEquals("", result.get(1));
+        assertEquals("", result.get(2));
+        assertEquals("", result.get(3));
+    }
+
+    @Test
     void joinContinuationLines_noBackslash() {
         List<String> input = Arrays.asList(
             "echo hello",
@@ -382,6 +400,24 @@ public class LucliScriptPreprocessorTest {
         assertEquals("echo debug mode", result.get(5)); // Kept (dev matches)
         assertEquals("", result.get(6)); // Directive removed
         assertEquals("echo done", result.get(7)); // Outside block
+    }
+
+    @Test
+    void preprocess_ignoresCommentedContinuationOption() throws SecretStoreException {
+        List<String> input = Arrays.asList(
+            "ai prompt \\",
+            "  --endpoint OpenAI \\",
+            "# --output-file ./out/pr_report.md \\",
+            "  --force --estimate --json"
+        );
+
+        List<String> result = LucliScriptPreprocessor.preprocess(input, null, null, null);
+
+        assertEquals(4, result.size());
+        assertEquals("ai prompt --endpoint OpenAI --force --estimate --json", result.get(0));
+        assertEquals("", result.get(1));
+        assertEquals("", result.get(2));
+        assertEquals("", result.get(3));
     }
 
     @Test

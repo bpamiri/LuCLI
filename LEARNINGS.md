@@ -24,3 +24,13 @@ Append new entries at the bottom under the appropriate date/session.
 - CI runners do not guarantee BATS availability; explicitly install it in workflow steps (`apt-get install bats` on Linux, `brew install bats-core` on macOS) before invoking `tests/test-bats.sh`.
 - When temporarily skipping unstable migration tests, prefer method-level `@Disabled("reason")` with specific scope and rationale rather than broad class-level disables.
 - In CI, prefer `bats -F tap --report-formatter junit` (and set `TERM=dumb` when missing) to avoid `tput`/broken-pipe formatter failures that can occur with `-F pretty` in non-interactive environments.
+
+## 2026-03-23
+
+- GitHub surfaces repository contribution guidance from `CONTRIBUTING.md` (root or `.github/`); `CONTRIBUTOR.md` is not used for the built-in Contributing entry point.
+- GitHub Actions badges should use workflow-specific endpoints (`/actions/workflows/<workflow>.yml/badge.svg`) and link back to the corresponding workflow page for quick status drill-down.
+
+## 2026-03-24
+
+- For lightweight AI cost previews, a dependency-free estimate can be composed from three parts: composed text heuristic tokens, JSON envelope overhead tokens, and image tile heuristic tokens; output should explicitly label the result as rough and non-billable.
+- In `.lucli` preprocessing, continuation joining runs before comment stripping; continuation logic must explicitly skip regular `#` comment lines during accumulation or commented-out options can leak into executed commands.

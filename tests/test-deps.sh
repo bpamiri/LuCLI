@@ -2,6 +2,13 @@
 # LuCLI Dependency Management Test Suite
 # Focused on deps install dry-run and nested dependency introspection
 
+# Moved to BATS:
+#   - tests/bats/05_deps_dry_run.bats
+# Keep this legacy script as a compatibility stub to avoid duplicate coverage.
+echo "ℹ️ test-deps.sh checks have moved to BATS (tests/bats/05_deps_dry_run.bats)."
+echo "ℹ️ Run: ./tests/test-bats.sh (or TEST_FILTER='deps' ./tests/test-bats.sh)"
+exit 0
+
 cd "$(dirname "$0")/.." || exit 1
 
 REPO_ROOT="$(pwd)"

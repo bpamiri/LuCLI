@@ -34,4 +34,38 @@ class AiCommandTest {
         ParseResult parseResult = new CommandLine(new AiCommand.ConfigCommand.AddCommand()).parseArgs("--quiet");
         assertTrue(parseResult.hasMatchedOption("--quiet"));
     }
+
+    @Test
+    void promptHelpIncludesEstimateOptions() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        PrintStream originalOut = System.out;
+        try {
+            System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
+            new CommandLine(new AiCommand.PromptCommand()).usage(System.out);
+        } finally {
+            System.setOut(originalOut);
+        }
+
+        String usage = out.toString(StandardCharsets.UTF_8);
+        assertTrue(usage.contains("--estimate"));
+        assertTrue(usage.contains("exit without"));
+        assertTrue(usage.contains("sending request"));
+        assertTrue(usage.contains("--assume-output-tokens"));
+        assertTrue(usage.contains("--input-price-per-1m"));
+        assertTrue(usage.contains("--output-price-per-1m"));
+    }
+
+    @Test
+    void promptParsesEstimateOptions() {
+        ParseResult parseResult = new CommandLine(new AiCommand.PromptCommand()).parseArgs(
+            "--estimate",
+            "--assume-output-tokens=512",
+            "--input-price-per-1m=2.50",
+            "--output-price-per-1m=10.00"
+        );
+        assertTrue(parseResult.hasMatchedOption("--estimate"));
+        assertTrue(parseResult.hasMatchedOption("--assume-output-tokens"));
+        assertTrue(parseResult.hasMatchedOption("--input-price-per-1m"));
+        assertTrue(parseResult.hasMatchedOption("--output-price-per-1m"));
+    }
 }
