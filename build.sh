@@ -39,6 +39,7 @@ else
         -DnewVersion='${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.nextIncrementalVersion}-SNAPSHOT' \
         -DgenerateBackupPoms=false
 fi
+INSTALL_TARGET=$(which lucli 2>/dev/null || echo "$HOME/.local/bin/lucli")
 
 # Build the JAR and binary
 # Use -Dmaven.test.skip=true so Maven does not compile or run tests during this
@@ -101,9 +102,9 @@ echo "----------------"
 
 
 if [ "$installLocally" = true ] ; then
-    echo "Installing lucli binary to ~/bin/lucli..."
-    cp target/lucli ~/bin/lucli
-    echo "Installed lucli binary to ~/bin/lucli"
+    echo "Installing lucli binary to ${INSTALL_TARGET}..."
+    cp target/lucli "$INSTALL_TARGET"
+    echo "Installed lucli binary to ${INSTALL_TARGET}"
 fi
 
 if [[ "$1" == "dockerlocal" ]]; then
