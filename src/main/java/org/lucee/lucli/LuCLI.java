@@ -122,7 +122,7 @@ public class LuCLI implements Callable<Integer> {
 
     @Option(names = {"-w", "--whitespace"}, 
             description = "Preserve whitespace in script output")
-    private boolean preserveWhitespaceOption = true;
+    private boolean preserveWhitespaceOption = false;
 
     @Option(names = {"-h", "--help"},
             usageHelp = true,

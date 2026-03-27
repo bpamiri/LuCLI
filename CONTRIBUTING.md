@@ -24,9 +24,11 @@ mvn clean package
 ## Validate Your Changes
 Run the standard test suites before opening a PR:
 ```bash
-./tests/test.sh
+mvn test
 ./tests/test-bats.sh
 ```
+
+Use `mvn test` for unit tests (JUnit in `src/test/java`) and `./tests/test-bats.sh` for integration/end-to-end CLI coverage.
 
 Useful additional checks:
 ```bash

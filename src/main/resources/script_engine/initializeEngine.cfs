@@ -68,8 +68,8 @@ if(
 	}
 }
 
-// Overwrite whitep
-config["cfmlWriter"] = LuCLI.preserveWhitespace ? "regular": "white-space";
+// Control whitespace handling in script output
+config["cfmlWriter"] = LuCLI.preserveWhitespace ? "white-space" : "regular";
 
 
 if(LuCLI.verbose){

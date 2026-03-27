@@ -642,6 +642,10 @@ public class ServerCommand implements Callable<Integer> {
                 description = "Name of specific server to check")
         private String name;
 
+        @Option(names = {"-c", "--config"},
+                description = "Configuration file to resolve server name from (e.g., lucee-docker.json)")
+        private String configFile;
+
         @Override
         public Integer call() throws Exception {
             // Create ServerCommandHandler for CLI mode
@@ -654,6 +658,9 @@ public class ServerCommand implements Callable<Integer> {
             if (name != null) {
                 args.add("--name");
                 args.add(name);
+            } else if (configFile != null) {
+                args.add("--config");
+                args.add(configFile);
             }
 
             // Execute the server status command
@@ -900,8 +907,12 @@ public class ServerCommand implements Callable<Integer> {
                 description = "Remove a specific stopped server by name")
         private String name;
 
+        @Option(names = {"-c", "--config"},
+                description = "Configuration file to resolve server name from (e.g., lucee-docker.json)")
+        private String configFile;
+
         @Option(names = {"-f", "--force"},
-                description = "Skip confirmation prompt")
+                description = "Skip confirmation prompt and attempt to stop server before pruning")
         private boolean force;
 
         @Override
@@ -918,6 +929,9 @@ public class ServerCommand implements Callable<Integer> {
             if (name != null) {
                 args.add("--name");
                 args.add(name);
+            } else if (configFile != null) {
+                args.add("--config");
+                args.add(configFile);
             }
             if (force) {
                 args.add("--force");

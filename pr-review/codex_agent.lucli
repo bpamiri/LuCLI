@@ -1,0 +1,1 @@
+agent -f -p --model composer-2-fast "Say hello like Statler And Waldorf"

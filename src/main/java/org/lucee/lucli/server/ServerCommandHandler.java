@@ -1104,12 +1104,16 @@ public class ServerCommandHandler {
             if (!isTerminalMode) {
                 result.append("Stopping server for: ").append(currentWorkingDirectory).append("\n");
             }
-            boolean stopped = serverManager.stopServer(currentWorkingDirectory);
-            
-            if (stopped) {
-                result.append("✅ Server stopped successfully.");
-            } else {
-                result.append("ℹ️  No running server found for this directory.");
+            try {
+                boolean stopped = serverManager.stopServer(currentWorkingDirectory);
+                
+                if (stopped) {
+                    result.append("✅ Server stopped successfully.");
+                } else {
+                    result.append("ℹ️  No running server found for this directory.");
+                }
+            } catch (LuceeServerManager.ProjectServerAmbiguityException e) {
+                return formatOutput("❌ " + e.getMessage(), true);
             }
         }
         
@@ -1125,12 +1129,26 @@ public class ServerCommandHandler {
     
     private String handleServerStatus(LuceeServerManager serverManager, String[] args) throws Exception {
         String serverName = null;
+        String configFileName = null;
         
-        // Parse --name flag (skip "status")
+        // Parse --name and --config flags (skip "status")
         for (int i = 1; i < args.length; i++) {
             if ((args[i].equals("--name") || args[i].equals("-n")) && i + 1 < args.length) {
                 serverName = args[i + 1];
-                break;
+                i++;
+            } else if ((args[i].equals("--config") || args[i].equals("-c")) && i + 1 < args.length) {
+                configFileName = args[i + 1];
+                i++;
+            }
+        }
+
+        // If --config was provided (and no explicit --name), resolve the server name from the config file
+        if (serverName == null && configFileName != null) {
+            try {
+                LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(currentWorkingDirectory, configFileName);
+                serverName = config.name;
+            } catch (Exception e) {
+                return formatOutput("❌ Failed to load config file '" + configFileName + "': " + e.getMessage(), true);
             }
         }
         
@@ -1170,7 +1188,12 @@ public class ServerCommandHandler {
             }
         } else {
             // Get status for current directory
-            LuceeServerManager.ServerStatus status = serverManager.getServerStatus(currentWorkingDirectory);
+            LuceeServerManager.ServerStatus status;
+            try {
+                status = serverManager.getServerStatus(currentWorkingDirectory);
+            } catch (LuceeServerManager.ProjectServerAmbiguityException e) {
+                return formatOutput("❌ " + e.getMessage(), true);
+            }
             
             result.append("Server status for: ").append(currentWorkingDirectory).append("\n");
             
@@ -1516,6 +1539,7 @@ public class ServerCommandHandler {
     private String handleServerPrune(LuceeServerManager serverManager, String[] args) throws Exception {
         boolean pruneAll = false;
         String serverName = null;
+        String configFileName = null;
         boolean force = false;
         
         // Parse arguments (skip "prune")
@@ -1525,11 +1549,24 @@ public class ServerCommandHandler {
             } else if ((args[i].equals("--name") || args[i].equals("-n")) && i + 1 < args.length) {
                 serverName = args[i + 1];
                 i++; // Skip next argument
+            } else if ((args[i].equals("--config") || args[i].equals("-c")) && i + 1 < args.length) {
+                configFileName = args[i + 1];
+                i++; // Skip next argument
             } else if (args[i].equals("--force") || args[i].equals("-f")) {
                 force = true;
             } else if (!args[i].startsWith("-")) {
                 // Treat non-option argument as server name
                 serverName = args[i];
+            }
+        }
+
+        // If --config was provided (and no explicit --name), resolve the server name from the config file
+        if (serverName == null && configFileName != null && !pruneAll) {
+            try {
+                LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(currentWorkingDirectory, configFileName);
+                serverName = config.name;
+            } catch (Exception e) {
+                return formatOutput("❌ Failed to load config file '" + configFileName + "': " + e.getMessage(), true);
             }
         }
         
@@ -1613,7 +1650,9 @@ public class ServerCommandHandler {
             }
             
             // Prune specific server by name
-            LuceeServerManager.PruneResult pruneResult = serverManager.pruneServerByName(serverName);
+            LuceeServerManager.PruneResult pruneResult = force
+                ? serverManager.forcePruneServerByName(serverName)
+                : serverManager.pruneServerByName(serverName);
             
             if (pruneResult.isSuccess()) {
                 result.append("✅ Server '").append(serverName).append("' pruned successfully.");
@@ -1622,18 +1661,25 @@ public class ServerCommandHandler {
                 return formatOutput(result.toString(), true);
             }
         } else {
-            // Get server name from config for confirmation prompt
-            String serverNameFromConfig = null;
+            String serverNameFromProject = null;
             try {
-                LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(currentWorkingDirectory);
-                serverNameFromConfig = config.name;
-            } catch (Exception e) {
-                return formatOutput("❌ No server configuration found for current directory.", true);
+                java.util.List<LuceeServerManager.ServerInfo> projectServers =
+                    serverManager.getServersForProject(currentWorkingDirectory);
+
+                if (projectServers.isEmpty()) {
+                    return formatOutput("❌ No server instance found for current directory.", true);
+                }
+                if (projectServers.size() > 1) {
+                    throw new LuceeServerManager.ProjectServerAmbiguityException(currentWorkingDirectory, projectServers);
+                }
+                serverNameFromProject = projectServers.get(0).getServerName();
+            } catch (LuceeServerManager.ProjectServerAmbiguityException e) {
+                return formatOutput("❌ " + e.getMessage(), true);
             }
             
             // Show confirmation prompt unless --force is used
             if (!force) {
-                result.append("⚠️  You are about to prune server: ").append(serverNameFromConfig).append("\n");
+                result.append("⚠️  You are about to prune server: ").append(serverNameFromProject).append("\n");
                 result.append("This will permanently delete server files and cannot be undone.\n");
                 result.append("Are you sure? (y/N): ");
                 
@@ -1649,7 +1695,12 @@ public class ServerCommandHandler {
             }
             
             // Prune server for current directory
-            LuceeServerManager.PruneResult pruneResult = serverManager.pruneServer(currentWorkingDirectory);
+            LuceeServerManager.PruneResult pruneResult;
+            try {
+                pruneResult = serverManager.pruneServer(currentWorkingDirectory, force);
+            } catch (LuceeServerManager.ProjectServerAmbiguityException e) {
+                return formatOutput("❌ " + e.getMessage(), true);
+            }
             
             if (pruneResult.isSuccess()) {
                 result.append("✅ Server '").append(pruneResult.getServerName()).append("' pruned successfully.");

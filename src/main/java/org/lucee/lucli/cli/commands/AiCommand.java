@@ -62,10 +62,24 @@ public class AiCommand implements Callable<Integer> {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String RESPONSE_PROCESS_COOKIES_MARKER = "ResponseProcessCookies";
     private static final String OPENAI_ENGINE_CLASS = "lucee.runtime.ai.openai.OpenAIEngine";
+    private static final String CLAUDE_ENGINE_CLASS = "lucee.runtime.ai.anthropic.ClaudeEngine";
+    private static final String GEMINI_ENGINE_CLASS = "lucee.runtime.ai.google.GeminiEngine";
+    private static final Set<String> OPENAI_COMPATIBLE_PROVIDER_TYPES = Set.of(
+        "openai",
+        "copilot",
+        "deepseek",
+        "grok",
+        "ollama",
+        "perplexity",
+        "other"
+    );
+    private static final Set<String> APIKEY_PROVIDER_TYPES = Set.of("claude", "gemini");
     private static final Map<String, ProviderDefaults> GUIDED_PROVIDER_DEFAULTS = Map.of(
         "openai", new ProviderDefaults(OPENAI_ENGINE_CLASS, "gpt-4o", null),
         "copilot", new ProviderDefaults(OPENAI_ENGINE_CLASS, "gpt-4.1", null),
+        "claude", new ProviderDefaults(CLAUDE_ENGINE_CLASS, "claude-sonnet-4-5", "https://api.anthropic.com/v1/"),
         "deepseek", new ProviderDefaults(OPENAI_ENGINE_CLASS, "deepseek-chat", null),
+        "gemini", new ProviderDefaults(GEMINI_ENGINE_CLASS, "gemini-2.5-pro", "https://generativelanguage.googleapis.com/v1/"),
         "grok", new ProviderDefaults(OPENAI_ENGINE_CLASS, "grok-2-latest", null),
         "ollama", new ProviderDefaults(OPENAI_ENGINE_CLASS, "llama3.1", "http://localhost:11434/v1"),
         "perplexity", new ProviderDefaults(OPENAI_ENGINE_CLASS, "sonar", null)
@@ -153,10 +167,9 @@ public class AiCommand implements Callable<Integer> {
             @Option(names = "--name", description = "Endpoint name/key (e.g., mychatgpt)")
             private String name;
 
-            @Option(names = "--class", defaultValue = OPENAI_ENGINE_CLASS, description = "AI engine class")
+            @Option(names = "--class", description = "AI engine class (defaults by provider type)")
             private String className;
-
-            @Option(names = "--type", defaultValue = "openai", description = "Provider type (openai, copilot, deepseek, grok, ollama, perplexity, other)")
+            @Option(names = "--type", defaultValue = "openai", description = "Provider type (openai, claude, gemini, copilot, deepseek, grok, ollama, perplexity, other)")
             private String type;
 
             @Option(names = "--url", description = "Optional custom endpoint URL")
@@ -182,7 +195,7 @@ public class AiCommand implements Callable<Integer> {
             @Option(names = "--quiet", description = "Suppress printing imported config payload (useful for CI)")
             private boolean quiet;
 
-            @Option(names = "--show", description = "Show full secretKey values in output (otherwise masked)")
+            @Option(names = "--show", description = "Show full API key values in output (otherwise masked)")
             private boolean showSecrets;
             @Option(names = "--guided", description = "Interactive guided setup for AI connection fields")
             private boolean guided;
@@ -212,6 +225,8 @@ public class AiCommand implements Callable<Integer> {
                     StringOutput.Quick.error("Endpoint name is required.");
                     return 1;
                 }
+                type = normalizeProviderType(type);
+                className = resolveEngineClass(className, type);
 
                 AddConfigRequest request = new AddConfigRequest();
                 request.name = name.trim();
@@ -310,12 +325,6 @@ public class AiCommand implements Callable<Integer> {
                 return defaultValue;
             }
 
-            private static String normalizeProviderType(String value) {
-                if (isBlank(value)) {
-                    return "openai";
-                }
-                return value.trim().toLowerCase(Locale.ROOT);
-            }
 
             private Integer runConnectionTest(String endpoint) {
                 try {
@@ -443,7 +452,7 @@ public class AiCommand implements Callable<Integer> {
             @Option(names = "--json", description = "Output as JSON")
             private boolean json;
 
-            @Option(names = "--show", description = "Show full secretKey values (otherwise masked)")
+            @Option(names = "--show", description = "Show full API key values (otherwise masked)")
             private boolean showSecrets;
 
             @Override
@@ -689,7 +698,7 @@ public class AiCommand implements Callable<Integer> {
         @Option(names = "--json", description = "Output as JSON")
         private boolean json;
 
-        @Option(names = "--show", description = "Show full secretKey values (otherwise masked)")
+        @Option(names = "--show", description = "Show full API key values (otherwise masked)")
         private boolean showSecrets;
 
         @Override
@@ -980,38 +989,12 @@ public class AiCommand implements Callable<Integer> {
     }
 
     private static PromptResult executeConfigAdd(AddConfigRequest request) throws Exception {
-        String payload = MAPPER.writeValueAsString(request);
+        ObjectNode importPayload = buildAiConfigImportPayload(request);
+        String payload = MAPPER.writeValueAsString(importPayload);
         String escapedPayload = escapeForSingleQuotedCfml(payload);
 
         String script = """
-payload = deserializeJSON('%s');
-
-entry = {
-    "class": payload.className,
-    "custom": {
-        "message": payload.message,
-        "secretKey": payload.secretKey,
-        "model": payload.model,
-        "type": payload.type,
-        "timeout": payload.timeout
-    },
-    "default": payload.defaultMode
-};
-
-if (!len(trim(payload.url ?: ""))) {
-    structDelete(entry.custom, "url", false);
-} else {
-    entry.custom["url"] = payload.url;
-}
-if (!len(trim(payload.message ?: ""))) structDelete(entry.custom, "message", false);
-if (!len(trim(payload.secretKey ?: ""))) structDelete(entry.custom, "secretKey", false);
-if (!len(trim(payload.model ?: ""))) structDelete(entry.custom, "model", false);
-if (!len(trim(payload.type ?: ""))) structDelete(entry.custom, "type", false);
-if (isNull(payload.timeout)) structDelete(entry.custom, "timeout", false);
-if (!len(trim(payload.defaultMode ?: ""))) structDelete(entry, "default", false);
-
-cfg = {"ai": {}};
-cfg.ai[payload.name] = entry;
+cfg = deserializeJSON('%s');
 
 configImport(
     data=cfg,
@@ -1034,6 +1017,90 @@ __lucliAiResultText = __lucliAiResultJson;
         result.text = text != null ? String.valueOf(text) : "";
         result.json = json != null ? String.valueOf(json) : "";
         return result;
+    }
+    static ObjectNode buildAiConfigImportPayload(AddConfigRequest request) {
+        String providerType = normalizeProviderType(request.type);
+        String engineClass = resolveEngineClass(request.className, providerType);
+
+        ObjectNode entry = MAPPER.createObjectNode();
+        entry.put("class", engineClass);
+
+        ObjectNode custom = MAPPER.createObjectNode();
+        putIfNotBlank(custom, "message", request.message);
+        putIfNotBlank(custom, "model", request.model);
+        putIfNotBlank(custom, "url", request.url);
+        if (request.timeout != null) {
+            custom.put("timeout", request.timeout);
+        }
+
+        String apiKeyFieldName = shouldUseApiKeyField(providerType, engineClass) ? "apiKey" : "secretKey";
+        putIfNotBlank(custom, apiKeyFieldName, request.secretKey);
+
+        if (shouldIncludeTypeField(providerType, engineClass)) {
+            putIfNotBlank(custom, "type", providerType);
+        }
+
+        entry.set("custom", custom);
+        putIfNotBlank(entry, "default", request.defaultMode);
+
+        ObjectNode ai = MAPPER.createObjectNode();
+        ai.set(request.name, entry);
+
+        ObjectNode cfg = MAPPER.createObjectNode();
+        cfg.set("ai", ai);
+        return cfg;
+    }
+
+    static String resolveEngineClass(String requestedClassName, String providerType) {
+        if (!isBlank(requestedClassName)) {
+            return requestedClassName.trim();
+        }
+        String normalizedProviderType = normalizeProviderType(providerType);
+        return switch (normalizedProviderType) {
+            case "claude" -> CLAUDE_ENGINE_CLASS;
+            case "gemini" -> GEMINI_ENGINE_CLASS;
+            default -> OPENAI_ENGINE_CLASS;
+        };
+    }
+
+    static String normalizeProviderType(String value) {
+        if (isBlank(value)) {
+            return "openai";
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean shouldUseApiKeyField(String providerType, String engineClass) {
+        String normalizedProviderType = normalizeProviderType(providerType);
+        if (APIKEY_PROVIDER_TYPES.contains(normalizedProviderType)) {
+            return true;
+        }
+        if (isBlank(engineClass)) {
+            return false;
+        }
+        String normalizedClassName = engineClass.trim();
+        return CLAUDE_ENGINE_CLASS.equalsIgnoreCase(normalizedClassName)
+            || GEMINI_ENGINE_CLASS.equalsIgnoreCase(normalizedClassName);
+    }
+
+    private static boolean shouldIncludeTypeField(String providerType, String engineClass) {
+        String normalizedProviderType = normalizeProviderType(providerType);
+        if (isBlank(engineClass)) {
+            return false;
+        }
+        if (!OPENAI_ENGINE_CLASS.equalsIgnoreCase(engineClass.trim())) {
+            return false;
+        }
+        if (APIKEY_PROVIDER_TYPES.contains(normalizedProviderType)) {
+            return false;
+        }
+        return OPENAI_COMPATIBLE_PROVIDER_TYPES.contains(normalizedProviderType) || !isBlank(normalizedProviderType);
+    }
+
+    private static void putIfNotBlank(ObjectNode node, String fieldName, String value) {
+        if (!isBlank(value)) {
+            node.put(fieldName, value.trim());
+        }
     }
 
 
@@ -1759,9 +1826,9 @@ if (isSimpleValue(aiResponse)) {
             JsonNode custom = value.path("custom");
 
             String className = nodeText(value, "class");
-            String type = nodeText(custom, "type");
+            String type = providerTypeForDisplay(nodeText(custom, "type"), className);
             String model = nodeText(custom, "model");
-            String secretKey = nodeText(custom, "secretKey");
+            String secretKey = nodeTextAny(custom, "secretKey", "apiKey", "apikey");
             String defaultMode = nodeText(value, "default");
 
             String label = (!isBlank(defaultEndpoint) && name.equals(defaultEndpoint))
@@ -1785,6 +1852,39 @@ if (isSimpleValue(aiResponse)) {
             return null;
         }
         return value.asText();
+    }
+
+    private static String nodeTextAny(JsonNode node, String... fields) {
+        if (fields == null) {
+            return null;
+        }
+        for (String field : fields) {
+            String value = nodeText(node, field);
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String providerTypeForDisplay(String configuredType, String className) {
+        if (!isBlank(configuredType)) {
+            return configuredType;
+        }
+        if (isBlank(className)) {
+            return null;
+        }
+        String normalizedClassName = className.trim();
+        if (CLAUDE_ENGINE_CLASS.equalsIgnoreCase(normalizedClassName)) {
+            return "claude";
+        }
+        if (GEMINI_ENGINE_CLASS.equalsIgnoreCase(normalizedClassName)) {
+            return "gemini";
+        }
+        if (OPENAI_ENGINE_CLASS.equalsIgnoreCase(normalizedClassName)) {
+            return "openai";
+        }
+        return null;
     }
 
     private static String fallback(String value) {
@@ -1852,7 +1952,7 @@ if (isSimpleValue(aiResponse)) {
                 Map.Entry<String, JsonNode> field = fields.next();
                 String fieldName = field.getKey();
                 JsonNode value = field.getValue();
-                if ("secretKey".equalsIgnoreCase(fieldName) && value != null && value.isTextual()) {
+                if (isSensitiveAiConfigField(fieldName) && value != null && value.isTextual()) {
                     objectNode.put(fieldName, maskSecretValue(value.asText()));
                     continue;
                 }
@@ -1867,6 +1967,14 @@ if (isSimpleValue(aiResponse)) {
                 redactSecretKeysInPlace(child);
             }
         }
+    }
+
+    private static boolean isSensitiveAiConfigField(String fieldName) {
+        if (isBlank(fieldName)) {
+            return false;
+        }
+        String normalized = fieldName.trim().toLowerCase(Locale.ROOT);
+        return "secretkey".equals(normalized) || "apikey".equals(normalized);
     }
 
     private static int printFriendlyAiFailure(String action, String endpoint, Exception error) {

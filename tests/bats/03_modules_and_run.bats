@@ -49,10 +49,57 @@ teardown() {
     assert_output_contains "${module_name}"
 }
 
+@test "modules install without URL fails" {
+    local module_name="missing_url_${BATS_TEST_NUMBER}"
+
+    run_lucli modules install "${module_name}"
+    assert_failure
+}
+
+@test "modules run executes initialized module" {
+    local module_name="bats_run_module_${BATS_TEST_NUMBER}"
+    local module_dir="${LUCLI_HOME}/modules/${module_name}"
+
+    run_lucli modules init "${module_name}" --no-git
+    assert_success
+
+    cat > "${module_dir}/Module.cfc" << EOF
+component {
+    function main() {
+        writeOutput("Hello from ${module_name} module");
+    }
+}
+EOF
+
+    run_lucli modules run "${module_name}"
+    assert_success
+    assert_output_contains "Hello from ${module_name} module"
+}
+
 @test "run command executes cfm script" {
     run_lucli run "${LUCLI_ROOT_DIR}/tests/cfml/run.cfm"
     assert_success
     assert_output_contains "Hello from a tag based file"
+}
+
+@test "run whitespace flag toggles cfmlWriter mode" {
+    local script_path
+    script_path="$(mktemp "${BATS_TEST_TMPDIR}/whitespace_probe.XXXXXX.cfm")"
+    cat > "${script_path}" << 'EOF'
+<cfoutput>A
+
+
+B
+</cfoutput>
+EOF
+
+    run_lucli --verbose run "${script_path}"
+    assert_success
+    assert_output_contains "\"cfmlWriter\": \"regular\""
+
+    run_lucli --verbose --whitespace run "${script_path}"
+    assert_success
+    assert_output_contains "\"cfmlWriter\": \"white-space\""
 }
 
 @test "run command blocks direct cfc execution" {

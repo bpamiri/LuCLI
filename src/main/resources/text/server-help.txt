@@ -15,18 +15,24 @@ Commands:
     --no-agents              Disable all agents for this start
   stop [options]             Stop the server for the current directory
     --name NAME              Stop a specific server by name
+    --config FILE            Resolve server name from an alternate config file
   status [options]           Show server status for the current directory
     --name NAME              Show status for a specific server by name
+    --config FILE            Resolve server name from an alternate config file
   list                       List all server instances
   prune [options]            Remove stopped server instances
     --all                    Remove all stopped servers
     --name NAME              Remove a specific stopped server by name
+    --config FILE            Resolve server name from an alternate config file
+    --force                  Skip confirmation and attempt stop before pruning
   monitor [options]          Monitor a Lucee server via JMX
   log [options]              View server logs (tomcat, server, web)
 
 Configuration:
   Server configuration is read from lucee.json in the current directory.
   If lucee.json doesn't exist, a default one will be created.
+  If multiple server slugs are associated with the same project path,
+  use --name (or --config where supported) to disambiguate project-scoped commands.
 
 Examples:
   lucli server start                            # Start server with default settings

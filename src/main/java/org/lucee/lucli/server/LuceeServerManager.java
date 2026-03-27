@@ -65,6 +65,61 @@ public class LuceeServerManager {
                     && (webrootOverride == null || webrootOverride.trim().isEmpty());
         }
     }
+
+    /**
+     * Raised when a project directory maps to more than one managed server slug.
+     * Callers should require explicit disambiguation (for example via --name).
+     */
+    public static class ProjectServerAmbiguityException extends IllegalStateException {
+        private final Path projectDir;
+        private final List<String> matchingServerNames;
+
+        public ProjectServerAmbiguityException(Path projectDir, List<ServerInfo> matches) {
+            super(buildMessage(projectDir, matches));
+            this.projectDir = projectDir;
+            List<String> names = new ArrayList<>();
+            if (matches != null) {
+                for (ServerInfo info : matches) {
+                    if (info != null && info.getServerName() != null) {
+                        names.add(info.getServerName());
+                    }
+                }
+            }
+            this.matchingServerNames = List.copyOf(names);
+        }
+
+        public Path getProjectDir() {
+            return projectDir;
+        }
+
+        public List<String> getMatchingServerNames() {
+            return matchingServerNames;
+        }
+
+        private static String buildMessage(Path projectDir, List<ServerInfo> matches) {
+            StringBuilder message = new StringBuilder();
+            Path normalizedProject = projectDir != null ? projectDir.toAbsolutePath().normalize() : null;
+            message.append("Multiple server instances are associated with project '")
+                   .append(normalizedProject != null ? normalizedProject : "<unknown>")
+                   .append("':\n");
+
+            if (matches != null) {
+                for (ServerInfo info : matches) {
+                    if (info == null || info.getServerName() == null) {
+                        continue;
+                    }
+                    message.append("  - ")
+                           .append(info.getServerName())
+                           .append(" (")
+                           .append(info.isRunning() ? "RUNNING" : "STOPPED")
+                           .append(")\n");
+                }
+            }
+
+            message.append("Use --name <server-name> to disambiguate (or --config <lucee*.json> where supported).");
+            return message.toString();
+        }
+    }
     
     private static final String LUCEE_CDN_URL_TEMPLATE = "https://cdn.lucee.org/lucee-express-{version}.zip";
     private static final String DEFAULT_VERSION = "6.2.2.91";
@@ -598,13 +653,6 @@ public class LuceeServerManager {
             }
         }
         
-        // Check if there's a running server for this project directory
-        ServerInstance existingInstance = getRunningServer(projectDir);
-        if (existingInstance != null) {
-            throw new IllegalStateException("Server already running for project: " + existingInstance.getServerName() + 
-                                          " (PID: " + existingInstance.getPid() + ", Port: " + existingInstance.getPort() + ")");
-        }
-        
         // At this point the logical server name and environment are resolved
         // and any existing LuCLI-managed server directories have been checked.
         // Delegate the actual runtime-specific startup to a RuntimeProvider.
@@ -767,14 +815,18 @@ public class LuceeServerManager {
      * Get the status of a server for the given project directory
      */
     public ServerStatus getServerStatus(Path projectDir) throws IOException {
-        ServerInstance instance = getRunningServer(projectDir);
-        if (instance == null) {
+        ServerInfo serverInfo = resolveSingleServerForProject(projectDir);
+        if (serverInfo == null) {
             return new ServerStatus(false, null, -1, -1, null);
         }
-        
-        boolean isRunning = isProcessRunning(instance.getPid(), instance.getServerDir());
-        return new ServerStatus(isRunning, instance.getServerName(), instance.getPid(), 
-                              instance.getPort(), instance.getServerDir());
+
+        return new ServerStatus(
+                serverInfo.isRunning(),
+                serverInfo.getServerName(),
+                serverInfo.getPid(),
+                serverInfo.getPort(),
+                serverInfo.getServerDir()
+        );
     }
     
     /**
@@ -831,16 +883,7 @@ public class LuceeServerManager {
                 }
                 
                 // Try to read project directory from .project-path marker file
-                Path projectPathFile = serverDir.resolve(".project-path");
-                Path projectDir = null;
-                if (Files.exists(projectPathFile)) {
-                    try {
-                        String projectPathStr = Files.readString(projectPathFile).trim();
-                        projectDir = Paths.get(projectPathStr);
-                    } catch (Exception e) {
-                        // Ignore invalid project path file
-                    }
-                }
+                Path projectDir = readProjectPath(serverDir);
                 
                 // Read environment if present
                 String environment = readEnvironment(serverDir);
@@ -851,42 +894,131 @@ public class LuceeServerManager {
         
         return servers;
     }
+
+    /**
+     * Resolve all managed servers associated with a project directory.
+     * This is a one-to-many mapping: a single project can have multiple slugs.
+     */
+    public List<ServerInfo> getServersForProject(Path projectDir) throws IOException {
+        return getProjectServerCandidates(projectDir);
+    }
+
+    /**
+     * Resolve exactly one managed server for a project directory.
+     * Throws when multiple servers are associated with the same project path.
+     */
+    private ServerInfo resolveSingleServerForProject(Path projectDir) throws IOException {
+        List<ServerInfo> candidates = getProjectServerCandidates(projectDir);
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        if (candidates.size() > 1) {
+            throw new ProjectServerAmbiguityException(projectDir, candidates);
+        }
+        return candidates.get(0);
+    }
+
+    private List<ServerInfo> getProjectServerCandidates(Path projectDir) throws IOException {
+        Path normalizedProject = normalizeProjectPath(projectDir);
+        List<ServerInfo> matches = new ArrayList<>();
+        for (ServerInfo server : listServers()) {
+            if (server.getProjectDir() == null || normalizedProject == null) {
+                continue;
+            }
+            if (pathsReferToSameLocation(server.getProjectDir(), normalizedProject)) {
+                matches.add(server);
+            }
+        }
+
+        if (!matches.isEmpty()) {
+            matches.sort(java.util.Comparator.comparing(ServerInfo::getServerName));
+            return matches;
+        }
+
+        // Backward-compatible fallback: infer by default lucee.json name when
+        // no .project-path mapping is available (legacy server directories).
+        ServerInfo fallback = getConfigDerivedServerFallback(projectDir);
+        if (fallback != null) {
+            matches.add(fallback);
+        }
+        return matches;
+    }
+
+    private ServerInfo getConfigDerivedServerFallback(Path projectDir) throws IOException {
+        if (projectDir == null) {
+            return null;
+        }
+
+        Path configFile = projectDir.resolve("lucee.json");
+        if (!Files.exists(configFile)) {
+            return null;
+        }
+
+        LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(projectDir);
+        ServerInfo serverInfo = getServerInfoByName(config.name);
+        if (serverInfo == null) {
+            return null;
+        }
+
+        if (serverInfo.getProjectDir() != null) {
+            if (!pathsReferToSameLocation(serverInfo.getProjectDir(), projectDir)) {
+                return null;
+            }
+            return serverInfo;
+        }
+
+        return new ServerInfo(
+                serverInfo.getServerName(),
+                serverInfo.getPid(),
+                serverInfo.getPort(),
+                serverInfo.isRunning(),
+                serverInfo.getServerDir(),
+                normalizeProjectPath(projectDir),
+                serverInfo.getEnvironment()
+        );
+    }
+
+    private Path normalizeProjectPath(Path path) {
+        if (path == null) {
+            return null;
+        }
+        Path normalized = path.toAbsolutePath().normalize();
+        try {
+            return normalized.toRealPath();
+        } catch (IOException e) {
+            return normalized;
+        }
+    }
+
+    private boolean pathsReferToSameLocation(Path first, Path second) {
+        Path normalizedFirst = normalizeProjectPath(first);
+        Path normalizedSecond = normalizeProjectPath(second);
+        if (normalizedFirst == null || normalizedSecond == null) {
+            return false;
+        }
+        return normalizedFirst.equals(normalizedSecond);
+    }
     
     /**
      * Get running server instance for a project directory
      */
     public ServerInstance getRunningServer(Path projectDir) throws IOException {
-        try {
-            LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(projectDir);
-            Path serverDir = serversDir.resolve(config.name);
-            Path pidFile = serverDir.resolve("server.pid");
-            
-            if (Files.exists(pidFile)) {
-                String pidContent = Files.readString(pidFile).trim();
-                String[] parts = pidContent.split(":");
-                if (parts.length >= 2) {
-                    long pid = Long.parseLong(parts[0]);
-                    int port = Integer.parseInt(parts[1]);
-                    
-                    if (isProcessRunning(pid, serverDir)) {
-                        return new ServerInstance(config.name, pid, port, serverDir, projectDir);
-                    }
-                    // Stale PID file
-                    Files.deleteIfExists(pidFile);
-                }
-            }
-            
-            // Fallback: Docker container may still be running even if server.pid
-            // was deleted (e.g. by an older LuCLI build).
-            ServerInstance dockerInstance = getDockerFallbackInstance(config.name, serverDir, projectDir);
-            if (dockerInstance != null) {
-                return dockerInstance;
-            }
-            
-            return null;
-        } catch (Exception e) {
+        ServerInfo serverInfo = resolveSingleServerForProject(projectDir);
+        if (serverInfo == null || !serverInfo.isRunning()) {
             return null;
         }
+
+        Path resolvedProjectDir = serverInfo.getProjectDir() != null
+                ? serverInfo.getProjectDir()
+                : normalizeProjectPath(projectDir);
+
+        return new ServerInstance(
+                serverInfo.getServerName(),
+                serverInfo.getPid(),
+                serverInfo.getPort(),
+                serverInfo.getServerDir(),
+                resolvedProjectDir
+        );
     }
     
     /**
@@ -921,9 +1053,8 @@ public class LuceeServerManager {
      */
     private int recoverDockerPort(Path serverDir) {
         try {
-            Path projectPathFile = serverDir.resolve(".project-path");
-            if (Files.exists(projectPathFile)) {
-                Path projectDir = Paths.get(Files.readString(projectPathFile).trim());
+            Path projectDir = readProjectPath(serverDir);
+            if (projectDir != null && Files.exists(projectDir.resolve("lucee.json"))) {
                 LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(projectDir);
                 return config.port;
             }
@@ -945,6 +1076,22 @@ public class LuceeServerManager {
             }
         }
         return null;
+    }
+
+    private Path readProjectPath(Path serverDir) {
+        Path projectPathFile = serverDir.resolve(".project-path");
+        if (!Files.exists(projectPathFile)) {
+            return null;
+        }
+        try {
+            String projectPathStr = Files.readString(projectPathFile).trim();
+            if (projectPathStr.isEmpty()) {
+                return null;
+            }
+            return normalizeProjectPath(Paths.get(projectPathStr));
+        } catch (Exception e) {
+            return null;
+        }
     }
     
     public void checkAndReportPortConflicts(LuceeServerConfig.ServerConfig config, LuceeServerConfig.PortConflictResult portResult)
@@ -1104,51 +1251,11 @@ public class LuceeServerManager {
      * Returns the server information if found and matches, null otherwise
      */
     private ServerInfo getExistingServerForProject(Path projectDir, String serverName) throws IOException {
-        Path serverDir = serversDir.resolve(serverName);
-        
-        if (!Files.exists(serverDir)) {
+        ServerInfo serverInfo = getServerInfoByName(serverName);
+        if (serverInfo == null || serverInfo.getProjectDir() == null) {
             return null;
         }
-        
-        // Check if there's a project path marker file or if we can determine the original project path
-        Path projectPathFile = serverDir.resolve(".project-path");
-        if (Files.exists(projectPathFile)) {
-            try {
-                String storedProjectPath = Files.readString(projectPathFile).trim();
-                Path storedPath = Paths.get(storedProjectPath).normalize();
-                Path currentPath = projectDir.normalize();
-                if (storedPath.equals(currentPath)) {
-                    // This server was created for the current project directory
-                    Path pidFile = serverDir.resolve("server.pid");
-                    long pid = -1;
-                    int port = -1;
-                    boolean isRunning = false;
-                    
-                    if (Files.exists(pidFile)) {
-                        try {
-                            String pidContent = Files.readString(pidFile).trim();
-                            String[] parts = pidContent.split(":");
-                            if (parts.length >= 2) {
-                                pid = Long.parseLong(parts[0]);
-                                port = Integer.parseInt(parts[1]);
-                                isRunning = isProcessRunning(pid);
-                            }
-                        } catch (Exception e) {
-                            // Invalid PID file
-                        }
-                    }
-                    
-                    // Read environment if present
-                    String environment = readEnvironment(serverDir);
-                    
-                    return new ServerInfo(serverName, pid, port, isRunning, serverDir, storedPath, environment);
-                }
-            } catch (Exception e) {
-                // Ignore invalid project path file
-            }
-        }
-        
-        return null;
+        return pathsReferToSameLocation(serverInfo.getProjectDir(), projectDir) ? serverInfo : null;
     }
     
     /**
@@ -1177,24 +1284,34 @@ public class LuceeServerManager {
                 if (parts.length >= 2) {
                     pid = Long.parseLong(parts[0]);
                     port = Integer.parseInt(parts[1]);
-                    isRunning = isProcessRunning(pid);
+                    isRunning = isProcessRunning(pid, serverDir);
                 }
             } catch (Exception e) {
                 // Invalid PID file, server is not running
             }
         }
-        
-        // Try to read project directory from .project-path marker file
-        Path projectPathFile = serverDir.resolve(".project-path");
-        Path projectDir = null;
-        if (Files.exists(projectPathFile)) {
-            try {
-                String projectPathStr = Files.readString(projectPathFile).trim();
-                projectDir = Paths.get(projectPathStr);
-            } catch (Exception e) {
-                // Ignore invalid project path file
+
+        // Docker fallback: container may be running without a valid server.pid
+        if (!isRunning) {
+            Path dockerMarker = serverDir.resolve(".docker-container");
+            if (Files.exists(dockerMarker)) {
+                try {
+                    String containerName = Files.readString(dockerMarker).trim();
+                    if (org.lucee.lucli.server.runtime.DockerRuntimeProvider
+                            .isDockerContainerRunning(containerName)) {
+                        isRunning = true;
+                        pid = -1;
+                        if (port <= 0) {
+                            port = recoverDockerPort(serverDir);
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
             }
         }
+
+        // Try to read project directory from .project-path marker file
+        Path projectDir = readProjectPath(serverDir);
         
         // Read environment if present
         String environment = readEnvironment(serverDir);
@@ -1230,28 +1347,22 @@ public class LuceeServerManager {
      * Only removes stopped servers
      */
     public PruneResult pruneServer(Path projectDir) throws IOException {
-        ServerInstance instance = getRunningServer(projectDir);
-        if (instance != null) {
-            // Server is still running, cannot prune
-            return new PruneResult(instance.getServerName(), false, "Server is still running");
+        return pruneServer(projectDir, false);
+    }
+
+    /**
+     * Prune (remove) the server for the current project directory.
+     * When force=true, will attempt to stop a running server before pruning.
+     */
+    public PruneResult pruneServer(Path projectDir, boolean force) throws IOException {
+        ServerInfo serverInfo = resolveSingleServerForProject(projectDir);
+        if (serverInfo == null) {
+            return new PruneResult("unknown", false, "No server instance found for this directory");
         }
-        
-        // Load config to get server name
-        try {
-            LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(projectDir);
-            Path serverDir = serversDir.resolve(config.name);
-            
-            if (!Files.exists(serverDir)) {
-                return new PruneResult(config.name, false, "Server directory not found");
-            }
-            
-            // Delete server directory
-            deleteServerDirectory(serverDir);
-            return new PruneResult(config.name, true, "Server pruned successfully");
-            
-        } catch (Exception e) {
-            return new PruneResult("unknown", false, "Failed to load server config: " + e.getMessage());
+        if (force) {
+            return forcePruneServerByName(serverInfo.getServerName());
         }
+        return pruneServerByName(serverInfo.getServerName());
     }
     
     /**
@@ -1270,6 +1381,41 @@ public class LuceeServerManager {
         }
         
         // Delete server directory
+        deleteServerDirectory(serverInfo.getServerDir());
+        return new PruneResult(serverName, true, "Server pruned successfully");
+    }
+
+    /**
+     * Force-prune a specific server by name.
+     * If the server is running, attempt to stop it first.
+     */
+    public PruneResult forcePruneServerByName(String serverName) throws IOException {
+        ServerInfo serverInfo = getServerInfoByName(serverName);
+        if (serverInfo == null) {
+            return new PruneResult(serverName, false, "Server not found");
+        }
+
+        if (serverInfo.isRunning()) {
+            ServerInstance instance = new ServerInstance(
+                    serverInfo.getServerName(),
+                    serverInfo.getPid(),
+                    serverInfo.getPort(),
+                    serverInfo.getServerDir(),
+                    serverInfo.getProjectDir()
+            );
+            boolean stopped = stopServer(instance);
+            if (!stopped) {
+                serverInfo = getServerInfoByName(serverName);
+                if (serverInfo != null && serverInfo.isRunning()) {
+                    return new PruneResult(serverName, false, "Server is still running");
+                }
+            }
+        }
+
+        serverInfo = getServerInfoByName(serverName);
+        if (serverInfo == null) {
+            return new PruneResult(serverName, true, "Server already removed");
+        }
         deleteServerDirectory(serverInfo.getServerDir());
         return new PruneResult(serverName, true, "Server pruned successfully");
     }
@@ -1322,7 +1468,7 @@ public class LuceeServerManager {
                             
                             // Check if this server is using the requested port and is still running
                             if ((serverPort == port || LuceeServerConfig.getShutdownPort(serverPort) == port) 
-                                && isProcessRunning(pid)) {
+                                && isProcessRunning(pid, serverDir)) {
                                 return serverDir.getFileName().toString();
                             }
                         }
@@ -1967,7 +2113,10 @@ public class LuceeServerManager {
         }
 
         // Marker files
-        Files.writeString(catalinaBase.resolve(".project-path"), projectDir.toAbsolutePath().toString());
+        Path normalizedProjectDir = normalizeProjectPath(projectDir);
+        if (normalizedProjectDir != null) {
+            Files.writeString(catalinaBase.resolve(".project-path"), normalizedProjectDir.toString());
+        }
         if (environment != null && !environment.trim().isEmpty()) {
             Files.writeString(catalinaBase.resolve(".environment"), environment.trim());
         }
@@ -2128,7 +2277,10 @@ public class LuceeServerManager {
 
         // Marker files
         Path pidFile = jettyBase.resolve("server.pid");
-        Files.writeString(jettyBase.resolve(".project-path"), projectDir.toAbsolutePath().toString());
+        Path normalizedProjectDir = normalizeProjectPath(projectDir);
+        if (normalizedProjectDir != null) {
+            Files.writeString(jettyBase.resolve(".project-path"), normalizedProjectDir.toString());
+        }
         if (environment != null && !environment.trim().isEmpty()) {
             Files.writeString(jettyBase.resolve(".environment"), environment.trim());
         }

@@ -35,3 +35,17 @@ Append new entries at the bottom under the appropriate date/session.
 - For lightweight AI cost previews, a dependency-free estimate can be composed from three parts: composed text heuristic tokens, JSON envelope overhead tokens, and image tile heuristic tokens; output should explicitly label the result as rough and non-billable.
 - In `.lucli` preprocessing, continuation joining runs before comment stripping; continuation logic must explicitly skip regular `#` comment lines during accumulation or commented-out options can leak into executed commands.
 - In BATS, when passing positional parameters to `bash -c` via `run`, keep the command string single-quoted (for example, `'cd "$1" && java -jar "$2" ...'`); double-quoted strings expand `$1/$2` in the parent test shell first and can silently erase forwarded args like JAR paths.
+- In BATS helpers, `BATS_TEST_TMPDIR` can be unavailable in `setup_file`; use a fallback chain like `BATS_TEST_TMPDIR -> BATS_FILE_TMPDIR -> TMPDIR` when creating shared temp directories.
+- For `modules run` migration tests, prefer injecting a minimal deterministic `Module.cfc` after `modules init` so the test validates command wiring even if template defaults change.
+- For whitespace-mode migration tests, direct output byte/length comparisons can be unstable due one-time engine initialization output and shell/BATS newline trimming; a deterministic assertion is to run with `--verbose` and verify `cfmlWriter` mode switches (`regular` vs `white-space`).
+
+## 2026-03-25
+
+- For `.lucli` AI automation pipelines, prefer `ai prompt --output-file <path> --force` over shell redirection for model outputs because LuCLI creates parent directories automatically and gives consistent write behavior across scripts.
+- For project-scoped lifecycle commands, `.project-path` must be treated as a one-to-many index (`project -> [server slugs]`), not a one-to-one identity; when multiple slugs map to the same project, commands like no-arg `server status/stop/prune` should return an explicit disambiguation error and require `--name` (or `--config` where supported).
+- In BATS helpers, avoid `bash -lc` wrappers for command execution because login shells can reset PATH/JAVA selection and cause runtime/class-version mismatches; use `bash -c` so the test runner’s exported toolchain environment is preserved.
+
+## 2026-03-27
+
+- In `lucli ai config add`, deriving provider engine class from `--type` in command logic is safer than a hardcoded picocli default for `--class`; otherwise non-OpenAI provider types can silently serialize as `OpenAIEngine`.
+- Lucee AI provider config is key-name sensitive by engine family: OpenAI-compatible engines use `custom.secretKey` (and often `custom.type`), while Claude/Gemini use `custom.apiKey`; masking/listing/redaction helpers should support both.

@@ -26,7 +26,9 @@ require_lucli_artifacts() {
 
 setup_lucli_home() {
     export LUCLI_HOME
-    LUCLI_HOME="$(mktemp -d "${BATS_TEST_TMPDIR}/lucli-home.XXXXXX")"
+    local tmp_base
+    tmp_base="${BATS_TEST_TMPDIR:-${BATS_FILE_TMPDIR:-${TMPDIR:-/tmp}}}"
+    LUCLI_HOME="$(mktemp -d "${tmp_base%/}/lucli-home.XXXXXX")"
 }
 
 cleanup_lucli_home() {
@@ -41,6 +43,57 @@ run_lucli() {
 
 run_lucli_binary() {
     run "${LUCLI_BINARY}" "$@"
+}
+
+run_lucli_in_dir() {
+    local workdir="$1"
+    shift
+    run bash -c 'cd "$1" && shift && jar="$1" && shift && java -jar "$jar" "$@"' _ "${workdir}" "${LUCLI_JAR}" "$@"
+}
+
+stop_all_servers_if_possible() {
+    java -jar "${LUCLI_JAR}" server stop --all >/dev/null 2>&1 || true
+}
+
+find_available_test_port() {
+    local attempts=0
+    local port
+    while [[ "${attempts}" -lt 200 ]]; do
+        port=$((20000 + RANDOM % 30000))
+        if command -v lsof >/dev/null 2>&1; then
+            if lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+                attempts=$((attempts + 1))
+                continue
+            fi
+            printf '%s\n' "${port}"
+            return 0
+        fi
+
+        if command -v python3 >/dev/null 2>&1; then
+            if python3 - <<EOF >/dev/null 2>&1
+import socket
+s = socket.socket()
+try:
+    s.bind(("127.0.0.1", ${port}))
+finally:
+    s.close()
+EOF
+            then
+                printf '%s\n' "${port}"
+                return 0
+            fi
+            attempts=$((attempts + 1))
+            continue
+        fi
+
+        # Last-resort fallback when no probing utility exists.
+        if [[ -n "${port}" ]]; then
+            printf '%s\n' "${port}"
+            return 0
+        fi
+        attempts=$((attempts + 1))
+    done
+    return 1
 }
 
 assert_success() {
