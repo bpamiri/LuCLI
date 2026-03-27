@@ -36,6 +36,7 @@ scripts/extensions.cfs
 tomcat_tests/
 test-results.xml
 out/
+pr-review/
 Runtimes/
 server_test_*/
 test-*-results.xml
