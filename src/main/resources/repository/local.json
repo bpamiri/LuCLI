@@ -16,7 +16,11 @@
       "name": "bitbucket",
       "description": "Interact with Bitbucket API from LuCLI (alpha)",
       "url": "https://github.com/cybersonic/lucli-bitbucket.git"
+    },
+    {
+      "name": "wheels",
+      "description": "Code generation, migrations, testing, and server management for CFWheels",
+      "url": "https://github.com/wheels-dev/wheels-cli-lucli.git"
     }
-
   ]
 }
