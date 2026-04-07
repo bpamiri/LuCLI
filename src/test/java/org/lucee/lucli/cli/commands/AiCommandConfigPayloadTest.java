@@ -28,6 +28,36 @@ public class AiCommandConfigPayloadTest {
     }
 
     @Test
+    void buildAiConfigImportPayload_geminiTypeUsesGeminiTemplate() {
+        AiCommand.AddConfigRequest request = baseRequest("Gemini");
+        request.type = "gemini";
+        request.model = "gemini-3.1-pro-preview";
+        request.secretKey = "TEST_GEMINI_API_KEY";
+
+        ObjectNode payload = AiCommand.buildAiConfigImportPayload(request);
+
+        JsonNode entry = payload.path("ai").path("Gemini");
+        JsonNode custom = entry.path("custom");
+
+        assertEquals("lucee.runtime.ai.google.GeminiEngine", entry.path("class").asText());
+        assertEquals("2000", custom.path("connectTimeout").asText());
+        assertEquals("true", custom.path("beta").asText());
+        assertEquals("", custom.path("message").asText());
+        assertEquals("gemini-3.1-pro-preview", custom.path("model").asText());
+        assertEquals("0.7", custom.path("temperature").asText());
+        assertEquals("TEST_GEMINI_API_KEY", custom.path("apikey").asText());
+        assertEquals("20000", custom.path("socketTimeout").asText());
+        assertEquals("100", custom.path("conversationSizeLimit").asText());
+        assertEquals(8, custom.size());
+        assertTrue(custom.path("apiKey").isMissingNode());
+        assertTrue(custom.path("secretKey").isMissingNode());
+        assertTrue(custom.path("timeout").isMissingNode());
+        assertTrue(custom.path("url").isMissingNode());
+        assertTrue(custom.path("type").isMissingNode());
+        assertTrue(entry.path("default").isMissingNode());
+    }
+
+    @Test
     void buildAiConfigImportPayload_openAiTypeUsesSecretKeyAndType() {
         AiCommand.AddConfigRequest request = baseRequest("OpenAI");
         request.type = "openai";

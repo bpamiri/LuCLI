@@ -61,6 +61,9 @@ public class AiCommand implements Callable<Integer> {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String RESPONSE_PROCESS_COOKIES_MARKER = "ResponseProcessCookies";
+    private static final String DEFAULT_SYSTEM_MESSAGE = "Keep all answers as short as possible";
+    private static final String DEFAULT_PROVIDER_TIMEOUT_MS = "5000";
+    private static final String DEFAULT_PROVIDER_DEFAULT_MODE = "exception";
     private static final String OPENAI_ENGINE_CLASS = "lucee.runtime.ai.openai.OpenAIEngine";
     private static final String CLAUDE_ENGINE_CLASS = "lucee.runtime.ai.anthropic.ClaudeEngine";
     private static final String GEMINI_ENGINE_CLASS = "lucee.runtime.ai.google.GeminiEngine";
@@ -181,13 +184,13 @@ public class AiCommand implements Callable<Integer> {
             @Option(names = "--model", description = "Model name (e.g., gpt-4o)")
             private String model;
 
-            @Option(names = "--message", defaultValue = "Keep all answers as short as possible", description = "System message")
+            @Option(names = "--message", defaultValue = DEFAULT_SYSTEM_MESSAGE, description = "System message")
             private String message;
 
-            @Option(names = "--timeout", defaultValue = "5000", description = "Timeout in milliseconds")
+            @Option(names = "--timeout", defaultValue = DEFAULT_PROVIDER_TIMEOUT_MS, description = "Timeout in milliseconds")
             private Integer timeout;
 
-            @Option(names = "--default-mode", defaultValue = "exception", description = "Default mode for this endpoint entry")
+            @Option(names = "--default-mode", defaultValue = DEFAULT_PROVIDER_DEFAULT_MODE, description = "Default mode for this endpoint entry")
             private String defaultMode;
 
             @Option(names = "--json", description = "Print imported structure as JSON")
@@ -1021,10 +1024,31 @@ __lucliAiResultText = __lucliAiResultJson;
     static ObjectNode buildAiConfigImportPayload(AddConfigRequest request) {
         String providerType = normalizeProviderType(request.type);
         String engineClass = resolveEngineClass(request.className, providerType);
+        boolean geminiTemplate = isGeminiTemplate(providerType, engineClass);
 
         ObjectNode entry = MAPPER.createObjectNode();
         entry.put("class", engineClass);
+        ObjectNode custom = geminiTemplate
+            ? buildGeminiCustomConfig(request)
+            : buildStandardCustomConfig(request, providerType, engineClass);
 
+        entry.set("custom", custom);
+        if (geminiTemplate) {
+            if (shouldIncludeGeminiDefaultMode(request.defaultMode)) {
+                putIfNotBlank(entry, "default", request.defaultMode);
+            }
+        } else {
+            putIfNotBlank(entry, "default", request.defaultMode);
+        }
+
+        ObjectNode ai = MAPPER.createObjectNode();
+        ai.set(request.name, entry);
+
+        ObjectNode cfg = MAPPER.createObjectNode();
+        cfg.set("ai", ai);
+        return cfg;
+    }
+    private static ObjectNode buildStandardCustomConfig(AddConfigRequest request, String providerType, String engineClass) {
         ObjectNode custom = MAPPER.createObjectNode();
         putIfNotBlank(custom, "message", request.message);
         putIfNotBlank(custom, "model", request.model);
@@ -1039,16 +1063,49 @@ __lucliAiResultText = __lucliAiResultJson;
         if (shouldIncludeTypeField(providerType, engineClass)) {
             putIfNotBlank(custom, "type", providerType);
         }
+        return custom;
+    }
 
-        entry.set("custom", custom);
-        putIfNotBlank(entry, "default", request.defaultMode);
+    private static ObjectNode buildGeminiCustomConfig(AddConfigRequest request) {
+        ObjectNode custom = MAPPER.createObjectNode();
+        custom.put("connectTimeout", "2000");
+        custom.put("beta", "true");
+        custom.put("message", geminiMessageValue(request.message));
+        putIfNotBlank(custom, "model", request.model);
+        custom.put("temperature", "0.7");
+        putIfNotBlank(custom, "apikey", request.secretKey);
+        custom.put("socketTimeout", "20000");
+        custom.put("conversationSizeLimit", "100");
+        return custom;
+    }
 
-        ObjectNode ai = MAPPER.createObjectNode();
-        ai.set(request.name, entry);
+    private static String geminiMessageValue(String message) {
+        if (isBlank(message)) {
+            return "";
+        }
+        String trimmed = message.trim();
+        if (DEFAULT_SYSTEM_MESSAGE.equals(trimmed)) {
+            return "";
+        }
+        return trimmed;
+    }
 
-        ObjectNode cfg = MAPPER.createObjectNode();
-        cfg.set("ai", ai);
-        return cfg;
+    private static boolean isGeminiTemplate(String providerType, String engineClass) {
+        String normalizedProviderType = normalizeProviderType(providerType);
+        if ("gemini".equals(normalizedProviderType)) {
+            return true;
+        }
+        if (isBlank(engineClass)) {
+            return false;
+        }
+        return GEMINI_ENGINE_CLASS.equalsIgnoreCase(engineClass.trim());
+    }
+
+    private static boolean shouldIncludeGeminiDefaultMode(String defaultMode) {
+        if (isBlank(defaultMode)) {
+            return false;
+        }
+        return !DEFAULT_PROVIDER_DEFAULT_MODE.equalsIgnoreCase(defaultMode.trim());
     }
 
     static String resolveEngineClass(String requestedClassName, String providerType) {
