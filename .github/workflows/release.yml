@@ -112,11 +112,11 @@ jobs:
         if: steps.version.outputs.is_snapshot == 'false' && steps.tag_check.outputs.exists == 'false'
         uses: peter-evans/create-pull-request@v7
         with:
-          commit-message: docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}
-          title: docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}
+          commit-message: "docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}"
+          title: "docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}"
           body: |
             Automated update from release workflow to keep installer examples pinned to v${{ steps.version.outputs.VERSION }}.
-          branch: chore/release-download-stamp-v${{ steps.version.outputs.VERSION }}
+          branch: "chore/release-download-stamp-v${{ steps.version.outputs.VERSION }}"
           delete-branch: true
           add-paths: |
             content/layouts/download.cfm
