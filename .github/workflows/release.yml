@@ -43,6 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     
     steps:
       - uses: actions/checkout@v4
@@ -107,18 +108,18 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
 
-      - name: Commit stamped installer examples
+      - name: Create PR for stamped installer examples
         if: steps.version.outputs.is_snapshot == 'false' && steps.tag_check.outputs.exists == 'false'
-        run: |
-          if git diff --quiet -- content/layouts/download.cfm; then
-            echo "No website installer version changes to commit."
-            exit 0
-          fi
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add content/layouts/download.cfm
-          git commit -m "docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}"
-          git push
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}
+          title: docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}
+          body: |
+            Automated update from release workflow to keep installer examples pinned to v${{ steps.version.outputs.VERSION }}.
+          branch: chore/release-download-stamp-v${{ steps.version.outputs.VERSION }}
+          delete-branch: true
+          add-paths: |
+            content/layouts/download.cfm
 
       - name: Setup JAR signing keystore
         if: steps.version.outputs.is_snapshot == 'false' && steps.tag_check.outputs.exists == 'false'
