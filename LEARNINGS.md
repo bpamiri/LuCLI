@@ -49,3 +49,5 @@ Append new entries at the bottom under the appropriate date/session.
 
 - In `lucli ai config add`, deriving provider engine class from `--type` in command logic is safer than a hardcoded picocli default for `--class`; otherwise non-OpenAI provider types can silently serialize as `OpenAIEngine`.
 - Lucee AI provider config is key-name sensitive by engine family: OpenAI-compatible engines use `custom.secretKey` (and often `custom.type`), while Claude/Gemini use `custom.apiKey`; masking/listing/redaction helpers should support both.
+- Gemini config template compatibility can require provider-specific key casing and value formats (`custom.apikey` lower-case plus string-valued timeout/temperature/beta fields), so a generic OpenAI-style payload builder is not sufficient for `GeminiEngine`.
+- For one-shot local coverage runs, a dedicated script under `tests/` can safely standardize toolchain setup (`.sdkmanrc` -> `JAVA_HOME`) and execute `mvn clean test jacoco:report`, then surface `target/site/jacoco/index.html` for quick inspection.
