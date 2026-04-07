@@ -43,7 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     
     steps:
       - uses: actions/checkout@v4
@@ -79,47 +78,6 @@ jobs:
       - name: Download all artifacts
         if: steps.version.outputs.is_snapshot == 'false' && steps.tag_check.outputs.exists == 'false'
         uses: actions/download-artifact@v4
-      - name: Stamp website installer examples with release version
-        if: steps.version.outputs.is_snapshot == 'false' && steps.tag_check.outputs.exists == 'false'
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          version = os.environ["VERSION"]
-          path = Path("content/layouts/download.cfm")
-          text = path.read_text(encoding="utf-8")
-
-          text = re.sub(
-              r"LUCLI_VERSION=[0-9]+\.[0-9]+\.[0-9]+",
-              f"LUCLI_VERSION={version}",
-              text,
-          )
-          text = re.sub(
-              r"LUCLI_VERSION='[0-9]+\.[0-9]+\.[0-9]+'",
-              f"LUCLI_VERSION='{version}'",
-              text,
-          )
-
-          path.write_text(text, encoding="utf-8")
-          PY
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
-
-      - name: Create PR for stamped installer examples
-        if: steps.version.outputs.is_snapshot == 'false' && steps.tag_check.outputs.exists == 'false'
-        uses: peter-evans/create-pull-request@v7
-        with:
-          commit-message: "docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}"
-          title: "docs(download): stamp installer pinned examples for v${{ steps.version.outputs.VERSION }}"
-          body: |
-            Automated update from release workflow to keep installer examples pinned to v${{ steps.version.outputs.VERSION }}.
-          branch: "chore/release-download-stamp-v${{ steps.version.outputs.VERSION }}"
-          delete-branch: true
-          add-paths: |
-            content/layouts/download.cfm
 
       - name: Setup JAR signing keystore
         if: steps.version.outputs.is_snapshot == 'false' && steps.tag_check.outputs.exists == 'false'
