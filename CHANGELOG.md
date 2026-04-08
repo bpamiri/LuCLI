@@ -3,6 +3,8 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+
+## 0.3.3
 - **Unit Test Coverage One-Shot Script:** Added `tests/unit-tests-coverage.sh` to run Maven unit tests with JaCoCo coverage from project root and print/open generated report paths (`target/site/jacoco/index.html`).
 - **Fix: Gemini AI Config Template Output:** `lucli ai config add --type gemini` now emits the GeminiEngine-oriented template shape with provider-specific keys (`apikey`, `connectTimeout`, `socketTimeout`, `temperature`, `conversationSizeLimit`, and `beta`) and no default-mode field when left at the command default.
 - **Fix: AI Provider Mapping for `ai config add`:** `lucli ai config add --type claude` / `--type gemini` now infer the correct Lucee engine classes when `--class` is omitted, emit provider-specific API key fields (`apiKey` vs `secretKey`), preserve OpenAI-compatible `type` handling, and mask/list both key formats consistently.
