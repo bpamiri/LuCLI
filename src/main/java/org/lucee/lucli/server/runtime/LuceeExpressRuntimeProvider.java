@@ -3,6 +3,7 @@ package org.lucee.lucli.server.runtime;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.lucee.lucli.server.JdbcDriverManager;
 import org.lucee.lucli.server.LuceeServerConfig;
 import org.lucee.lucli.server.LuceeServerManager;
 import org.lucee.lucli.server.TomcatConfigSupport;
@@ -57,6 +58,17 @@ public final class LuceeExpressRuntimeProvider implements RuntimeProvider {
 
         // Write CFConfig (.CFConfig.json) into the Lucee context if configured.
         LuceeServerConfig.writeCfConfigIfPresent(config, projectDir, catalinaBase);
+
+        // Auto-install JDBC drivers required by datasources in CFConfig
+        Path cfConfigPath = catalinaBase.resolve("lucee-server/context/.CFConfig.json");
+        if (Files.exists(cfConfigPath)) {
+            String cfConfigJson = Files.readString(cfConfigPath);
+            Path libExtDir = catalinaHome.resolve("lib/ext");
+            boolean driversInstalled = JdbcDriverManager.ensureDrivers(libExtDir, cfConfigJson);
+            if (driversInstalled) {
+                System.out.println("New JDBC drivers installed. They will be available on this server start.");
+            }
+        }
 
         // Deploy extension dependencies to lucee-server/deploy folder
         manager.deployExtensionsForServer(projectDir, catalinaBase);
