@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **`#project:path#` Placeholder in Configuration:** Added `#project:path#` placeholder support for `lucee.json` configuration values (e.g. datasource DSNs). Resolved at server start alongside `#env:VAR#` and `#secret:NAME#`, replacing the token with the absolute project directory path.
 
 ## 0.3.3
 - **Unit Test Coverage One-Shot Script:** Added `tests/unit-tests-coverage.sh` to run Maven unit tests with JaCoCo coverage from project root and print/open generated report paths (`target/site/jacoco/index.html`).
