@@ -48,6 +48,36 @@ class CliProfileTest {
     }
 
     @Test
+    void forBinaryName_stripsPathFromBinaryName() {
+        CliProfile profile = CliProfile.forBinaryName("/usr/local/bin/wheels");
+        assertInstanceOf(WheelsProfile.class, profile);
+    }
+
+    @Test
+    void forBinaryName_stripsShExtension() {
+        CliProfile profile = CliProfile.forBinaryName("wheels.sh");
+        assertInstanceOf(WheelsProfile.class, profile);
+    }
+
+    @Test
+    void forBinaryName_stripsBatExtension() {
+        CliProfile profile = CliProfile.forBinaryName("wheels.bat");
+        assertInstanceOf(WheelsProfile.class, profile);
+    }
+
+    @Test
+    void forBinaryName_stripsPathAndExtension() {
+        CliProfile profile = CliProfile.forBinaryName("/opt/lucli/bin/wheels.sh");
+        assertInstanceOf(WheelsProfile.class, profile);
+    }
+
+    @Test
+    void forBinaryName_lucliShReturnsDefault() {
+        CliProfile profile = CliProfile.forBinaryName("lucli.sh");
+        assertInstanceOf(DefaultProfile.class, profile);
+    }
+
+    @Test
     void defaultProfile_bannerContainsLuCLI() {
         DefaultProfile profile = new DefaultProfile();
         // The banner should contain recognizable LuCLI ASCII art

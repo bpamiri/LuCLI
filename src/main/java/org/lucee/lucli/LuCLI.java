@@ -199,6 +199,15 @@ public class LuCLI implements Callable<Integer> {
     public static CliProfile getActiveProfile() {
         return activeProfile;
     }
+
+    /**
+     * Override the active profile. Intended for tests that need to verify
+     * profile-dependent behaviour; production code sets the profile once in
+     * {@link #main(String[])}.
+     */
+    public static void setActiveProfile(CliProfile profile) {
+        activeProfile = profile;
+    }
     
     /**
      * Commands that are treated as internal file-system style commands, routed
@@ -500,8 +509,10 @@ public class LuCLI implements Callable<Integer> {
         // Resolve the CLI profile (branding, home dir) from the binary name.
         // Must happen after prependBinaryNameIfAliased() which normalises the
         // system property, and before executeInProcess() which may read paths.
-        String binaryName = System.getProperty("lucli.binary.name", "lucli");
-        activeProfile = CliProfile.forBinaryName(binaryName);
+        // forBinaryName() normalises paths and extensions internally.
+        activeProfile = CliProfile.forBinaryName(
+            System.getProperty("lucli.binary.name", "lucli")
+        );
 
         int exitCode = executeInProcess(args);
         System.exit(exitCode);
@@ -571,15 +582,13 @@ public class LuCLI implements Callable<Integer> {
      * Only activates when the name is not "lucli" itself.
      */
     private static String[] prependBinaryNameIfAliased(String[] args) {
-        String binaryName = System.getProperty("lucli.binary.name", "lucli");
-
-        // Strip path separators in case the property contains a path fragment
-        if (binaryName.contains("/") || binaryName.contains("\\")) {
-            binaryName = Paths.get(binaryName).getFileName().toString();
-        }
+        String binaryName = CliProfile.normalizeBinaryName(
+            System.getProperty("lucli.binary.name", "lucli")
+        );
 
         // Only activate for non-lucli binary names
-        if ("lucli".equals(binaryName) || "lucli.sh".equals(binaryName) || binaryName.isEmpty()) {
+        if (binaryName == null || binaryName.isEmpty()
+                || "lucli".equalsIgnoreCase(binaryName)) {
             return args;
         }
 

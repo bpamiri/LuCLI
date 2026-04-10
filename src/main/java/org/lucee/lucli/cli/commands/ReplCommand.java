@@ -54,9 +54,9 @@ public class ReplCommand implements Callable<Integer> {
                 .name("CFML REPL")
                 .build();
             
-            // Set up history file for REPL
+            // Set up history file using profile-aware home directory
             Path homeDir = Paths.get(System.getProperty("user.home"));
-            Path historyFile = homeDir.resolve(".lucli").resolve("repl_history");
+            Path historyFile = homeDir.resolve(LuCLI.getActiveProfile().homeDirName()).resolve("repl_history");
             
             LineReader reader = LineReaderBuilder.builder()
                 .terminal(terminal)
@@ -66,7 +66,7 @@ public class ReplCommand implements Callable<Integer> {
                 .build();
             
             // Print welcome banner
-            terminal.writer().println(WindowsSupport.Symbols.ROCKET() + " CFML REPL - LuCLI " + LuCLI.getVersion());
+            terminal.writer().println(WindowsSupport.Symbols.ROCKET() + " CFML REPL - " + LuCLI.getActiveProfile().displayName() + " " + LuCLI.getVersion());
             terminal.writer().println(WindowsSupport.Symbols.INFO() + " Type CFML expressions to evaluate. Type 'exit' or Ctrl+D to quit.");
             terminal.writer().println();
             terminal.writer().flush();
