@@ -16,6 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * Unit tests for LuceeServerConfig
  * Tests JSON parsing, environment merging, port handling, and configuration defaults
@@ -1149,5 +1152,163 @@ public class LuceeServerConfigTest {
                         "Config port should be > 0 for " + relativePath);
             });
         }).toList();
+    }
+
+    // ===================
+    // #project:path# Placeholder Resolution Tests
+    // ===================
+
+    @Test
+    void resolveProjectPlaceholders_replacesInTextNode() {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode input = mapper.getNodeFactory().textNode("jdbc:sqlite:#project:path#/db/development.db");
+        Path projectDir = Path.of("/home/user/myapp");
+
+        JsonNode result = LuceeServerConfig.resolveProjectPlaceholders(input, projectDir);
+
+        String expected = "jdbc:sqlite:" + projectDir.toAbsolutePath().normalize() + "/db/development.db";
+        assertEquals(expected, result.asText());
+    }
+
+    @Test
+    void resolveProjectPlaceholders_leavesStringsWithoutPlaceholder() {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode input = mapper.getNodeFactory().textNode("jdbc:mysql://localhost/mydb");
+        Path projectDir = Path.of("/home/user/myapp");
+
+        JsonNode result = LuceeServerConfig.resolveProjectPlaceholders(input, projectDir);
+
+        assertEquals("jdbc:mysql://localhost/mydb", result.asText());
+    }
+
+    @Test
+    void resolveProjectPlaceholders_handlesNestedObjects() throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        String json = """
+            {
+                "datasources": {
+                    "myds": {
+                        "connectionString": "jdbc:sqlite:#project:path#/db/dev.db",
+                        "class": "org.sqlite.JDBC"
+                    }
+                },
+                "inspectTemplate": "once"
+            }
+            """;
+        JsonNode input = mapper.readTree(json);
+        Path projectDir = Path.of("/app/wheels");
+        String resolvedPath = projectDir.toAbsolutePath().normalize().toString();
+
+        JsonNode result = LuceeServerConfig.resolveProjectPlaceholders(input, projectDir);
+
+        assertEquals("jdbc:sqlite:" + resolvedPath + "/db/dev.db",
+                result.get("datasources").get("myds").get("connectionString").asText());
+        assertEquals("org.sqlite.JDBC",
+                result.get("datasources").get("myds").get("class").asText());
+        assertEquals("once", result.get("inspectTemplate").asText());
+    }
+
+    @Test
+    void resolveProjectPlaceholders_handlesArrays() throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        String json = """
+            ["#project:path#/lib", "no-change", "#project:path#/ext"]
+            """;
+        JsonNode input = mapper.readTree(json);
+        Path projectDir = Path.of("/opt/project");
+        String resolvedPath = projectDir.toAbsolutePath().normalize().toString();
+
+        JsonNode result = LuceeServerConfig.resolveProjectPlaceholders(input, projectDir);
+
+        assertTrue(result.isArray());
+        assertEquals(resolvedPath + "/lib", result.get(0).asText());
+        assertEquals("no-change", result.get(1).asText());
+        assertEquals(resolvedPath + "/ext", result.get(2).asText());
+    }
+
+    @Test
+    void resolveProjectPlaceholders_handlesNullNode() {
+        JsonNode result = LuceeServerConfig.resolveProjectPlaceholders(null, Path.of("/any"));
+        assertNull(result);
+    }
+
+    @Test
+    void resolveProjectPlaceholders_handlesNumericNodes() {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode input = mapper.getNodeFactory().numberNode(42);
+        Path projectDir = Path.of("/any");
+
+        JsonNode result = LuceeServerConfig.resolveProjectPlaceholders(input, projectDir);
+
+        assertEquals(42, result.asInt());
+    }
+
+    @Test
+    void resolveConfigurationNode_replacesProjectPlaceholder() throws IOException {
+        // Integration test: verify that resolveConfigurationNode resolves #project:path#
+        String luceeJson = """
+            {
+                "name": "placeholder-test",
+                "lucee": { "version": "6.2.2.91" },
+                "configuration": {
+                    "datasources": {
+                        "devdb": {
+                            "connectionString": "jdbc:sqlite:#project:path#/db/development.db"
+                        }
+                    }
+                }
+            }
+            """;
+        Path configFile = tempDir.resolve("lucee.json");
+        Files.writeString(configFile, luceeJson);
+
+        LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(tempDir);
+        JsonNode resolved = LuceeServerConfig.resolveConfigurationNode(config, tempDir);
+
+        assertNotNull(resolved);
+        String dsn = resolved.get("datasources").get("devdb").get("connectionString").asText();
+        String expected = "jdbc:sqlite:" + tempDir.toAbsolutePath() + "/db/development.db";
+        assertEquals(expected, dsn);
+    }
+
+    @Test
+    void writeCfConfigIfPresent_writesResolvedProjectPaths() throws IOException {
+        // Integration test: verify the full write path resolves #project:path#
+        String luceeJson = """
+            {
+                "name": "write-test",
+                "lucee": { "version": "6.2.2.91" },
+                "configuration": {
+                    "datasources": {
+                        "testds": {
+                            "connectionString": "jdbc:sqlite:#project:path#/db/test.db"
+                        }
+                    }
+                }
+            }
+            """;
+        Path configFile = tempDir.resolve("lucee.json");
+        Files.writeString(configFile, luceeJson);
+
+        LuceeServerConfig.ServerConfig config = LuceeServerConfig.loadConfig(tempDir);
+
+        Path serverInstanceDir = tempDir.resolve("server-instance");
+        Files.createDirectories(serverInstanceDir);
+
+        LuceeServerConfig.writeCfConfigIfPresent(config, tempDir, serverInstanceDir);
+
+        // Read back the written .CFConfig.json
+        Path cfConfigPath = serverInstanceDir
+                .resolve("lucee-server")
+                .resolve("context")
+                .resolve(".CFConfig.json");
+        assertTrue(Files.exists(cfConfigPath), ".CFConfig.json should have been written");
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode written = mapper.readTree(cfConfigPath.toFile());
+        String dsn = written.get("datasources").get("testds").get("connectionString").asText();
+        String expected = "jdbc:sqlite:" + tempDir.toAbsolutePath() + "/db/test.db";
+        assertEquals(expected, dsn);
+        assertFalse(dsn.contains("#project:path#"), "DSN should not contain unresolved #project:path#");
     }
 }
