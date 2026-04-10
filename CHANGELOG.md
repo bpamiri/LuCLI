@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **Fix: Profile-Aware Home Directory in Script Engine:** `LuceeScriptEngine.getLucliHomeDirectory()` now uses the active CLI profile's home directory instead of a hardcoded `~/.lucli` path. This ensures that `BaseModule.cfc` and other shared resources are provisioned to the correct home directory (e.g. `~/.wheels/modules/` when running as `wheels`).
 
 ## 0.3.3
 - **Unit Test Coverage One-Shot Script:** Added `tests/unit-tests-coverage.sh` to run Maven unit tests with JaCoCo coverage from project root and print/open generated report paths (`target/site/jacoco/index.html`).
