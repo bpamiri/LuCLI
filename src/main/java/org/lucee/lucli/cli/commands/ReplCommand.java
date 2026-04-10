@@ -79,7 +79,8 @@ public class ReplCommand implements Callable<Integer> {
             // Main REPL loop
             while (true) {
                 try {
-                    String line = reader.readLine("cfml> ");
+                    String prompt = LuCLI.getActiveProfile().promptPrefix() + "> ";
+                    String line = reader.readLine(prompt);
                     
                     if (line == null) {
                         break; // EOF

@@ -18,6 +18,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.lucee.lucli.cli.LuCLIVersionProvider;
+import org.lucee.lucli.profile.CliProfile;
+import org.lucee.lucli.profile.DefaultProfile;
 import org.lucee.lucli.cli.commands.CfmlCommand;
 import org.lucee.lucli.cli.commands.CompletionCommand;
 import org.lucee.lucli.cli.commands.DaemonCommand;
@@ -186,8 +188,17 @@ public class LuCLI implements Callable<Integer> {
     public static String envFilePath = null;
     private static boolean lucliScript = false;
     private static volatile Path runtimeCwd = null;
-    
+    private static CliProfile activeProfile = new DefaultProfile();
+
     public static Map<String, String> scriptEnvironment = new HashMap<>(System.getenv());
+
+    /**
+     * The active CLI profile, determined by the binary name at startup.
+     * Controls branding, home directory name, and prompt prefix.
+     */
+    public static CliProfile getActiveProfile() {
+        return activeProfile;
+    }
     
     /**
      * Commands that are treated as internal file-system style commands, routed
@@ -485,6 +496,12 @@ public class LuCLI implements Callable<Integer> {
         // property persists for the JVM's lifetime. Prepending here ensures it
         // happens exactly once.
         args = prependBinaryNameIfAliased(args);
+
+        // Resolve the CLI profile (branding, home dir) from the binary name.
+        // Must happen after prependBinaryNameIfAliased() which normalises the
+        // system property, and before executeInProcess() which may read paths.
+        String binaryName = System.getProperty("lucli.binary.name", "lucli");
+        activeProfile = CliProfile.forBinaryName(binaryName);
 
         int exitCode = executeInProcess(args);
         System.exit(exitCode);
@@ -976,16 +993,11 @@ public class LuCLI implements Callable<Integer> {
         // first few lines can still parse the version without needing to
         // strip the ASCII art banner.
         String ver = getVersion();
-        info.append("LuCLI Version: ").append(ver).append("\n");
-        // info.append("Version: ").append(ver).append("\n");
-        
-        // ASCII art banner
+        info.append(activeProfile.displayName()).append(" Version: ").append(ver).append("\n");
+
+        // ASCII art banner — provided by the active profile
         info.append("\n");
-        info.append(" _           ____ _     ___ \n");
-        info.append("| |   _   _ / ___| |   |_ _|\n");
-        info.append("| |  | | | | |   | |    | | \n");
-        info.append("| |__| |_| | |___| |___ | | \n");
-        info.append("|_____\\__,_|\\____|_____|___|\n");
+        info.append(activeProfile.bannerText());
         info.append("\n");
         
         if (includeLucee) {

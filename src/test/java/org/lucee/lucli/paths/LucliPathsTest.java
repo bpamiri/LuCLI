@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
+import org.lucee.lucli.LuCLI;
 
 class LucliPathsTest {
 
@@ -36,6 +37,11 @@ class LucliPathsTest {
 
     @Test
     void resolveFallsBackToUserHomeDefault() {
+        // This test depends on the static activeProfile being DefaultProfile
+        // (homeDirName() returns ".lucli"). If another test changes the
+        // active profile without restoring it, this assertion will break.
+        assertEquals(".lucli", LuCLI.getActiveProfile().homeDirName());
+
         LucliPaths.ResolvedPaths paths = LucliPaths.resolve(
             null,
             null,
