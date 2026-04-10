@@ -1277,8 +1277,8 @@ public class LuceeServerConfig {
             String placeholder = matcher.group(1);
             String replacement = null;
             
-            // Skip secret placeholders — handled separately
-            if (placeholder.startsWith("secret:")) {
+            // Skip secret and project placeholders — handled separately
+            if (placeholder.startsWith("secret:") || placeholder.startsWith("project:")) {
                 matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(matcher.group(0)));
                 continue;
             }
@@ -1368,12 +1368,14 @@ public class LuceeServerConfig {
     }
 
     /**
-     * Recursively replace {@code {project}} placeholders in all text values of a JSON node
+     * Recursively replace {@code #project:path#} placeholders in all text values of a JSON node
      * with the absolute path of the project directory.
      *
-     * <p>This enables portable configuration in lucee.json where datasource DSNs and other
-     * paths can reference {@code {project}} which gets resolved at startup, e.g.
-     * {@code jdbc:sqlite:{project}/db/development.db}.</p>
+     * <p>This follows the same {@code #prefix:value#} convention as {@code #env:VAR#} and
+     * {@code #secret:NAME#}. The {@code project:} prefix is skipped during the env-var pass
+     * and resolved here after all other substitutions.</p>
+     *
+     * <p>Example: {@code jdbc:sqlite:#project:path#/db/development.db}</p>
      */
     public static JsonNode resolveProjectPlaceholders(JsonNode node, Path projectDir) {
         if (node == null || projectDir == null) {
@@ -1383,8 +1385,8 @@ public class LuceeServerConfig {
 
         if (node.isTextual()) {
             String text = node.asText();
-            if (text.contains("{project}")) {
-                return objectMapper.getNodeFactory().textNode(text.replace("{project}", projectPath));
+            if (text.contains("#project:path#")) {
+                return objectMapper.getNodeFactory().textNode(text.replace("#project:path#", projectPath));
             }
             return node;
         } else if (node.isArray()) {
@@ -1972,7 +1974,7 @@ public class LuceeServerConfig {
         // a fallback LuCLI local provider so Lucee can resolve secrets natively.
         result = LucliSecretProviderSupport.ensureFallbackSecretProvider(result, objectMapper);
 
-        // Resolve {project} placeholders in all text values
+        // Resolve #project:path# placeholders in all text values
         if (result != null && projectDir != null) {
             result = resolveProjectPlaceholders(result, projectDir);
         }

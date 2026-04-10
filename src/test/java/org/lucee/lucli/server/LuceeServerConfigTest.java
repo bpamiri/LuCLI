@@ -1155,13 +1155,13 @@ public class LuceeServerConfigTest {
     }
 
     // ===================
-    // {project} Placeholder Resolution Tests
+    // #project:path# Placeholder Resolution Tests
     // ===================
 
     @Test
     void resolveProjectPlaceholders_replacesInTextNode() {
         ObjectMapper mapper = new ObjectMapper();
-        JsonNode input = mapper.getNodeFactory().textNode("jdbc:sqlite:{project}/db/development.db");
+        JsonNode input = mapper.getNodeFactory().textNode("jdbc:sqlite:#project:path#/db/development.db");
         Path projectDir = Path.of("/home/user/myapp");
 
         JsonNode result = LuceeServerConfig.resolveProjectPlaceholders(input, projectDir);
@@ -1188,7 +1188,7 @@ public class LuceeServerConfigTest {
             {
                 "datasources": {
                     "myds": {
-                        "connectionString": "jdbc:sqlite:{project}/db/dev.db",
+                        "connectionString": "jdbc:sqlite:#project:path#/db/dev.db",
                         "class": "org.sqlite.JDBC"
                     }
                 },
@@ -1212,7 +1212,7 @@ public class LuceeServerConfigTest {
     void resolveProjectPlaceholders_handlesArrays() throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         String json = """
-            ["{project}/lib", "no-change", "{project}/ext"]
+            ["#project:path#/lib", "no-change", "#project:path#/ext"]
             """;
         JsonNode input = mapper.readTree(json);
         Path projectDir = Path.of("/opt/project");
@@ -1245,7 +1245,7 @@ public class LuceeServerConfigTest {
 
     @Test
     void resolveConfigurationNode_replacesProjectPlaceholder() throws IOException {
-        // Integration test: verify that resolveConfigurationNode resolves {project}
+        // Integration test: verify that resolveConfigurationNode resolves #project:path#
         String luceeJson = """
             {
                 "name": "placeholder-test",
@@ -1253,7 +1253,7 @@ public class LuceeServerConfigTest {
                 "configuration": {
                     "datasources": {
                         "devdb": {
-                            "connectionString": "jdbc:sqlite:{project}/db/development.db"
+                            "connectionString": "jdbc:sqlite:#project:path#/db/development.db"
                         }
                     }
                 }
@@ -1273,7 +1273,7 @@ public class LuceeServerConfigTest {
 
     @Test
     void writeCfConfigIfPresent_writesResolvedProjectPaths() throws IOException {
-        // Integration test: verify the full write path resolves {project}
+        // Integration test: verify the full write path resolves #project:path#
         String luceeJson = """
             {
                 "name": "write-test",
@@ -1281,7 +1281,7 @@ public class LuceeServerConfigTest {
                 "configuration": {
                     "datasources": {
                         "testds": {
-                            "connectionString": "jdbc:sqlite:{project}/db/test.db"
+                            "connectionString": "jdbc:sqlite:#project:path#/db/test.db"
                         }
                     }
                 }
@@ -1309,6 +1309,6 @@ public class LuceeServerConfigTest {
         String dsn = written.get("datasources").get("testds").get("connectionString").asText();
         String expected = "jdbc:sqlite:" + tempDir.toAbsolutePath() + "/db/test.db";
         assertEquals(expected, dsn);
-        assertFalse(dsn.contains("{project}"), "DSN should not contain unresolved {project}");
+        assertFalse(dsn.contains("#project:path#"), "DSN should not contain unresolved #project:path#");
     }
 }
