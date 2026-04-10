@@ -1366,7 +1366,46 @@ public class LuceeServerConfig {
             return node;
         }
     }
-    
+
+    /**
+     * Recursively replace {@code {project}} placeholders in all text values of a JSON node
+     * with the absolute path of the project directory.
+     *
+     * <p>This enables portable configuration in lucee.json where datasource DSNs and other
+     * paths can reference {@code {project}} which gets resolved at startup, e.g.
+     * {@code jdbc:sqlite:{project}/db/development.db}.</p>
+     */
+    public static JsonNode resolveProjectPlaceholders(JsonNode node, Path projectDir) {
+        if (node == null || projectDir == null) {
+            return node;
+        }
+        String projectPath = projectDir.toAbsolutePath().normalize().toString();
+
+        if (node.isTextual()) {
+            String text = node.asText();
+            if (text.contains("{project}")) {
+                return objectMapper.getNodeFactory().textNode(text.replace("{project}", projectPath));
+            }
+            return node;
+        } else if (node.isArray()) {
+            com.fasterxml.jackson.databind.node.ArrayNode arrayNode =
+                objectMapper.getNodeFactory().arrayNode();
+            for (JsonNode element : node) {
+                arrayNode.add(resolveProjectPlaceholders(element, projectDir));
+            }
+            return arrayNode;
+        } else if (node.isObject()) {
+            com.fasterxml.jackson.databind.node.ObjectNode objNode =
+                objectMapper.getNodeFactory().objectNode();
+            node.fields().forEachRemaining(entry -> {
+                objNode.set(entry.getKey(), resolveProjectPlaceholders(entry.getValue(), projectDir));
+            });
+            return objNode;
+        } else {
+            return node;
+        }
+    }
+
     /**
      * Substitute a single config field value: first applies new #env:VAR# syntax
      * (and deprecated bare #VAR#), then falls back to deprecated ${VAR} syntax
@@ -1932,6 +1971,11 @@ public class LuceeServerConfig {
         // If no provider is configured but we have a local LuCLI store, inject
         // a fallback LuCLI local provider so Lucee can resolve secrets natively.
         result = LucliSecretProviderSupport.ensureFallbackSecretProvider(result, objectMapper);
+
+        // Resolve {project} placeholders in all text values
+        if (result != null && projectDir != null) {
+            result = resolveProjectPlaceholders(result, projectDir);
+        }
 
         return result;
     }
