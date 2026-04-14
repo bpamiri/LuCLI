@@ -51,3 +51,7 @@ Append new entries at the bottom under the appropriate date/session.
 - Lucee AI provider config is key-name sensitive by engine family: OpenAI-compatible engines use `custom.secretKey` (and often `custom.type`), while Claude/Gemini use `custom.apiKey`; masking/listing/redaction helpers should support both.
 - Gemini config template compatibility can require provider-specific key casing and value formats (`custom.apikey` lower-case plus string-valued timeout/temperature/beta fields), so a generic OpenAI-style payload builder is not sufficient for `GeminiEngine`.
 - For one-shot local coverage runs, a dedicated script under `tests/` can safely standardize toolchain setup (`.sdkmanrc` -> `JAVA_HOME`) and execute `mvn clean test jacoco:report`, then surface `target/site/jacoco/index.html` for quick inspection.
+
+## 2026-04-10
+
+- Server lifecycle commands should resolve environment with explicit-first precedence: `--env/--environment` on `server start/run` wins, and only when missing should command handling fall back to `LuCLI.getCurrentEnvironment()` (which includes `LUCLI_ENV`).

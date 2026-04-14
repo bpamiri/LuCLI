@@ -127,6 +127,7 @@ public class ServerCommandHandler {
         boolean includeHttpsKeystorePlan = false;
         boolean includeHttpsRedirectRules = false;
         Boolean enableLuceeOverride = null;
+        Boolean enableWarmupOverride = null;
         boolean sandbox = false;
         Integer portOverride = null;
         boolean createConfig = false;
@@ -213,6 +214,8 @@ public class ServerCommandHandler {
                 enableLuceeOverride = Boolean.FALSE;
             } else if (args[i].equals("--enable-lucee")) {
                 enableLuceeOverride = Boolean.TRUE;
+            } else if (args[i].equals("--warmup")) {
+                enableWarmupOverride = Boolean.TRUE;
             } else if (args[i].equals("--sandbox")) {
                 sandbox = true;
             } else if (args[i].equals("--no-agents")) {
@@ -251,6 +254,7 @@ public class ServerCommandHandler {
             }
         }
 
+        environment = resolveEnvironment(environment);
         // If sandbox mode is requested, disallow dry-run/preview flags which rely on lucee.json
         if (sandbox && (dryRun || includeLuceeConfig || includeTomcatWeb || includeTomcatServer
                 || includeHttpsKeystorePlan || includeHttpsRedirectRules || createConfig)) {
@@ -263,7 +267,7 @@ public class ServerCommandHandler {
         }
         
         LuceeServerManager.StartConfigOverrides startConfigOverrides =
-            buildStartConfigOverrides(configOverrides, webrootOverride, portOverride, enableLuceeOverride);
+            buildStartConfigOverrides(configOverrides, webrootOverride, portOverride, enableLuceeOverride, enableWarmupOverride);
         
         // Load final realized config for dry-run or actual startup
         String cfgFile = configFileName != null ? configFileName : "lucee.json";
@@ -653,6 +657,7 @@ public class ServerCommandHandler {
         boolean includeEnv = false;
         Integer portOverride = null;
         Boolean enableLuceeOverride = null;
+        Boolean enableWarmupOverride = null;
         Path projectDir = currentWorkingDirectory; // Default to current directory
         
         LuceeServerManager.AgentOverrides agentOverrides = new LuceeServerManager.AgentOverrides();
@@ -701,6 +706,8 @@ public class ServerCommandHandler {
                 enableLuceeOverride = Boolean.FALSE;
             } else if ("--enable-lucee".equals(arg)) {
                 enableLuceeOverride = Boolean.TRUE;
+            } else if ("--warmup".equals(arg)) {
+                enableWarmupOverride = Boolean.TRUE;
             } else if ("--no-agents".equals(arg)) {
                 agentOverrides.disableAllAgents = true;
             } else if ("--agents".equals(arg) && i + 1 < args.length) {
@@ -734,13 +741,15 @@ public class ServerCommandHandler {
             }
         }
         
+        environment = resolveEnvironment(environment);
+        
         // Disallow --dry-run with --sandbox
         if (sandbox && dryRun) {
             return formatOutput("❌ --sandbox cannot be combined with --dry-run.", true);
         }
         
         LuceeServerManager.StartConfigOverrides startConfigOverrides =
-            buildStartConfigOverrides(configOverrides, webrootOverride, portOverride, enableLuceeOverride);
+            buildStartConfigOverrides(configOverrides, webrootOverride, portOverride, enableLuceeOverride, enableWarmupOverride);
         
         // If no agent-related flags were actually set, avoid passing a non-null overrides object
         if (!agentOverrides.disableAllAgents &&
@@ -828,16 +837,35 @@ public class ServerCommandHandler {
         }
     }
 
+    /**
+     * Resolve environment value with fallback support.
+     *
+     * Resolution order:
+     * 1) Explicit --env/--environment passed to server subcommands
+     * 2) Root/global LuCLI environment resolution (including LUCLI_ENV)
+     */
+    private String resolveEnvironment(String explicitEnvironment) {
+        if (explicitEnvironment != null && !explicitEnvironment.trim().isEmpty()) {
+            return explicitEnvironment.trim();
+        }
+        String fallbackEnvironment = LuCLI.getCurrentEnvironment();
+        if (fallbackEnvironment != null && !fallbackEnvironment.trim().isEmpty()) {
+            return fallbackEnvironment.trim();
+        }
+        return null;
+    }
     private LuceeServerManager.StartConfigOverrides buildStartConfigOverrides(
             List<String> configOverrides,
             String webrootOverride,
             Integer portOverride,
-            Boolean enableLuceeOverride) {
+            Boolean enableLuceeOverride,
+            Boolean enableWarmupOverride) {
         LuceeServerManager.StartConfigOverrides overrides = new LuceeServerManager.StartConfigOverrides();
         overrides.configOverrides = configOverrides;
         overrides.webrootOverride = webrootOverride;
         overrides.portOverride = portOverride;
         overrides.enableLuceeOverride = enableLuceeOverride;
+        overrides.enableWarmupOverride = enableWarmupOverride;
         return overrides.isEmpty() ? null : overrides;
     }
     

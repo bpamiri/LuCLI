@@ -3,6 +3,8 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **Server Environment Fallback (`LUCLI_ENV`) + Docker Default:** `lucli server start` and `lucli server run` now fall back to `LUCLI_ENV` when `--env/--environment` is not provided, while still honoring explicit `--env` precedence. The Docker image now sets `LUCLI_ENV=""` by default so deployments can override it at runtime (for example `docker run -e LUCLI_ENV=prod ...`).
+- **Server Warmup Flag (`--warmup`):** Added `--warmup` support to `lucli server start` and `lucli server run` to enable Lucee build-time warmup by injecting both `LUCEE_ENABLE_WARMUP=true` and `-Dlucee.enable.warmup=true` for that invocation (without persisting changes to `lucee.json`).
 
 ## 0.3.3
 - **Unit Test Coverage One-Shot Script:** Added `tests/unit-tests-coverage.sh` to run Maven unit tests with JaCoCo coverage from project root and print/open generated report paths (`target/site/jacoco/index.html`).

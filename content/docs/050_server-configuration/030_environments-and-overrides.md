@@ -79,6 +79,24 @@ lucli server start --env=prod --dry-run
 
 This shows the final, environment‑aware configuration LuCLI will use before actually starting the server.
 
+### Default environment via `LUCLI_ENV`
+
+If you do not pass `--env` / `--environment` to `lucli server start` or `lucli server run`, LuCLI falls back to `LUCLI_ENV` when present.
+
+```bash
+# Default environment selection via process env
+export LUCLI_ENV=prod
+lucli server start
+
+# Explicit flag still takes precedence
+lucli server start --env=dev
+```
+
+Environment selection precedence for server lifecycle commands:
+
+1. Explicit `--env` / `--environment`
+2. `LUCLI_ENV`
+
 ## Configuration load order
 
 When an environment is specified, LuCLI builds the effective configuration in this order:

@@ -147,4 +147,34 @@ public class LuceeServerManagerAgentsTest {
         assertFalse(active.contains("a"), "Agent 'a' should be disabled by overrides");
         assertTrue(active.contains("b"), "Agent 'b' should be enabled by overrides");
     }
+
+    @Test
+    void applyStartConfigOverrides_warmupSetsEnvVarAndJvmProperty() throws Exception {
+        LuceeServerConfig.ServerConfig config = baseConfig();
+        config.envVars.put("APP_ENV", "test");
+        config.jvm.additionalArgs = new String[] {
+                "-Dfoo=bar",
+                "-Dlucee.enable.warmup=false"
+        };
+
+        LuceeServerManager.StartConfigOverrides overrides = new LuceeServerManager.StartConfigOverrides();
+        overrides.enableWarmupOverride = Boolean.TRUE;
+
+        LuceeServerManager.applyStartConfigOverrides(config, overrides);
+
+        assertEquals("true", config.envVars.get("LUCEE_ENABLE_WARMUP"),
+                "Warmup override should inject LUCEE_ENABLE_WARMUP=true");
+        assertTrue(config.envVars.containsKey("APP_ENV"),
+                "Warmup override should preserve existing env vars");
+
+        List<String> args = List.of(config.jvm.additionalArgs);
+        assertTrue(args.contains("-Dlucee.enable.warmup=true"),
+                "Warmup override should add lucee.enable.warmup=true");
+        assertFalse(args.contains("-Dlucee.enable.warmup=false"),
+                "Warmup override should replace existing lucee.enable.warmup values");
+
+        List<String> catalinaOpts = invokeBuildCatalinaOpts(config, null);
+        assertTrue(catalinaOpts.contains("-Dlucee.enable.warmup=true"),
+                "CATALINA_OPTS should include warmup system property after override");
+    }
 }
