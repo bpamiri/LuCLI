@@ -28,6 +28,7 @@ USER lucee
 
 # Set environment variable for LuCLI home
 ENV LUCLI_HOME=/home/lucee/.lucli
+ENV LUCLI_ENV=""
 
 # Warm up LuCLI (optional)
 # RUN lucli --version

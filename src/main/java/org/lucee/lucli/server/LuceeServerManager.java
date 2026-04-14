@@ -56,12 +56,14 @@ public class LuceeServerManager {
         public java.util.List<String> configOverrides;
         public Integer portOverride;
         public Boolean enableLuceeOverride;
+        public Boolean enableWarmupOverride;
         public String webrootOverride;
 
         public boolean isEmpty() {
             return (configOverrides == null || configOverrides.isEmpty())
                     && portOverride == null
                     && enableLuceeOverride == null
+                    && enableWarmupOverride == null
                     && (webrootOverride == null || webrootOverride.trim().isEmpty());
         }
     }
@@ -123,6 +125,10 @@ public class LuceeServerManager {
     
     private static final String LUCEE_CDN_URL_TEMPLATE = "https://cdn.lucee.org/lucee-express-{version}.zip";
     private static final String DEFAULT_VERSION = "6.2.2.91";
+    private static final String LUCEE_WARMUP_ENV_KEY = "LUCEE_ENABLE_WARMUP";
+    private static final String LUCEE_WARMUP_ENV_VALUE = "true";
+    private static final String LUCEE_WARMUP_JVM_ARG_PREFIX = "-Dlucee.enable.warmup=";
+    private static final String LUCEE_WARMUP_JVM_ARG_TRUE = "-Dlucee.enable.warmup=true";
 
     // Lucee engine JAR variants
     private static final String LUCEE_JAR_STANDARD_TEMPLATE = "https://cdn.lucee.org/lucee-{version}.jar";
@@ -699,6 +705,39 @@ public class LuceeServerManager {
         if (startConfigOverrides.enableLuceeOverride != null) {
             config.enableLucee = startConfigOverrides.enableLuceeOverride.booleanValue();
         }
+        if (Boolean.TRUE.equals(startConfigOverrides.enableWarmupOverride)) {
+            applyWarmupOverrides(config);
+        }
+    }
+
+    private static void applyWarmupOverrides(LuceeServerConfig.ServerConfig config) {
+        if (config.envVars == null) {
+            config.envVars = new java.util.HashMap<>();
+        }
+        config.envVars.put(LUCEE_WARMUP_ENV_KEY, LUCEE_WARMUP_ENV_VALUE);
+
+        if (config.jvm == null) {
+            config.jvm = new LuceeServerConfig.JvmConfig();
+        }
+
+        java.util.List<String> args = new java.util.ArrayList<>();
+        if (config.jvm.additionalArgs != null) {
+            for (String arg : config.jvm.additionalArgs) {
+                if (arg == null) {
+                    continue;
+                }
+                String trimmed = arg.trim();
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
+                if (trimmed.startsWith(LUCEE_WARMUP_JVM_ARG_PREFIX)) {
+                    continue;
+                }
+                args.add(trimmed);
+            }
+        }
+        args.add(LUCEE_WARMUP_JVM_ARG_TRUE);
+        config.jvm.additionalArgs = args.toArray(new String[0]);
     }
     
     /**

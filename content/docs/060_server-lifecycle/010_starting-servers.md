@@ -65,7 +65,7 @@ For more detail on available settings, see [Server Configuration](../050_server-
 
 ## Inline configuration overrides (`key=value`)
 
-You can override any `lucee.json` setting at startup by appending `key=value` pairs **after** the command. These overrides are applied on top of the loaded configuration and then persisted back to `lucee.json` so that future starts use the new values.
+You can override any `lucee.json` setting at startup by appending `key=value` pairs **after** the command. These overrides are applied on top of the loaded configuration for this invocation only.
 
 Examples:
 
@@ -88,7 +88,7 @@ Notes:
 - Nested keys use dot notation (e.g. `monitoring.enabled`, `jvm.maxMemory`).
 - Boolean values use `true`/`false`.
 - Numeric values are parsed as numbers where appropriate (e.g. `port=8081`).
-- Overrides are **saved** back into `lucee.json` so you do not need to repeat them every time.
+- Overrides are **not saved** back into `lucee.json`; use `lucli server config set ...` to persist changes.
 
 ## Choosing Lucee version
 
@@ -111,8 +111,35 @@ lucli server start --env=prod
 # Use the "dev" environment
 lucli server start --env dev
 ```
+If you do not pass `--env` / `--environment`, LuCLI falls back to `LUCLI_ENV` when it is set.
+
+Environment selection precedence:
+
+1. Explicit `--env` / `--environment`
+2. `LUCLI_ENV`
+
+```bash
+# Use LUCLI_ENV fallback
+export LUCLI_ENV=prod
+lucli server start
+lucli server run
+
+# Explicit flag still wins
+lucli server start --env=dev
+```
 
 LuCLI deep‑merges the selected environment onto the base configuration. See [Environments and Configuration Overrides](../050_server-configuration/030_environments-and-overrides/) for details.
+
+### Docker image default for `LUCLI_ENV`
+
+The LuCLI Docker image sets `LUCLI_ENV` to an empty string by default (`LUCLI_ENV=""`).
+Override it at runtime to pick an environment automatically:
+
+```bash
+docker run -e LUCLI_ENV=prod -p 8080:8080 -v "$(pwd):/app" markdrew/lucli:latest
+```
+
+This will run the container with the same environment fallback behavior as local `lucli server start` / `lucli server run`.
 
 ## Foreground vs background: `start` vs `run`
 

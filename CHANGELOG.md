@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 - **Fix: Profile-Aware Home Directory in Script Engine:** `LuceeScriptEngine.getLucliHomeDirectory()` now uses the active CLI profile's home directory instead of a hardcoded `~/.lucli` path. This ensures that `BaseModule.cfc` and other shared resources are provisioned to the correct home directory (e.g. `~/.wheels/modules/` when running as `wheels`).
+- **Server Environment Fallback (`LUCLI_ENV`) + Docker Default:** `lucli server start` and `lucli server run` now fall back to `LUCLI_ENV` when `--env/--environment` is not provided, while still honoring explicit `--env` precedence. The Docker image now sets `LUCLI_ENV=""` by default so deployments can override it at runtime (for example `docker run -e LUCLI_ENV=prod ...`).
+- **Server Warmup Flag (`--warmup`):** Added `--warmup` support to `lucli server start` and `lucli server run` to enable Lucee build-time warmup by injecting both `LUCEE_ENABLE_WARMUP=true` and `-Dlucee.enable.warmup=true` for that invocation (without persisting changes to `lucee.json`).
 - **`#project:path#` Placeholder in Configuration:** Added `#project:path#` placeholder support for `lucee.json` configuration values (e.g. datasource DSNs). Resolved at server start alongside `#env:VAR#` and `#secret:NAME#`, replacing the token with the absolute project directory path.
 
 
