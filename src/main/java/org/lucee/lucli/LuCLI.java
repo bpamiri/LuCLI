@@ -18,6 +18,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.lucee.lucli.cli.LuCLIVersionProvider;
+import org.lucee.lucli.profile.CliProfile;
+import org.lucee.lucli.profile.DefaultProfile;
 import org.lucee.lucli.cli.commands.CfmlCommand;
 import org.lucee.lucli.cli.commands.CompletionCommand;
 import org.lucee.lucli.cli.commands.DaemonCommand;
@@ -186,8 +188,26 @@ public class LuCLI implements Callable<Integer> {
     public static String envFilePath = null;
     private static boolean lucliScript = false;
     private static volatile Path runtimeCwd = null;
-    
+    private static CliProfile activeProfile = new DefaultProfile();
+
     public static Map<String, String> scriptEnvironment = new HashMap<>(System.getenv());
+
+    /**
+     * The active CLI profile, determined by the binary name at startup.
+     * Controls branding, home directory name, and prompt prefix.
+     */
+    public static CliProfile getActiveProfile() {
+        return activeProfile;
+    }
+
+    /**
+     * Override the active profile. Intended for tests that need to verify
+     * profile-dependent behaviour; production code sets the profile once in
+     * {@link #main(String[])}.
+     */
+    public static void setActiveProfile(CliProfile profile) {
+        activeProfile = profile;
+    }
     
     /**
      * Commands that are treated as internal file-system style commands, routed
@@ -486,6 +506,14 @@ public class LuCLI implements Callable<Integer> {
         // happens exactly once.
         args = prependBinaryNameIfAliased(args);
 
+        // Resolve the CLI profile (branding, home dir) from the binary name.
+        // Must happen after prependBinaryNameIfAliased() which normalises the
+        // system property, and before executeInProcess() which may read paths.
+        // forBinaryName() normalises paths and extensions internally.
+        activeProfile = CliProfile.forBinaryName(
+            System.getProperty("lucli.binary.name", "lucli")
+        );
+
         int exitCode = executeInProcess(args);
         System.exit(exitCode);
     }
@@ -554,15 +582,13 @@ public class LuCLI implements Callable<Integer> {
      * Only activates when the name is not "lucli" itself.
      */
     private static String[] prependBinaryNameIfAliased(String[] args) {
-        String binaryName = System.getProperty("lucli.binary.name", "lucli");
-
-        // Strip path separators in case the property contains a path fragment
-        if (binaryName.contains("/") || binaryName.contains("\\")) {
-            binaryName = Paths.get(binaryName).getFileName().toString();
-        }
+        String binaryName = CliProfile.normalizeBinaryName(
+            System.getProperty("lucli.binary.name", "lucli")
+        );
 
         // Only activate for non-lucli binary names
-        if ("lucli".equals(binaryName) || "lucli.sh".equals(binaryName) || binaryName.isEmpty()) {
+        if (binaryName == null || binaryName.isEmpty()
+                || "lucli".equalsIgnoreCase(binaryName)) {
             return args;
         }
 
@@ -976,16 +1002,11 @@ public class LuCLI implements Callable<Integer> {
         // first few lines can still parse the version without needing to
         // strip the ASCII art banner.
         String ver = getVersion();
-        info.append("LuCLI Version: ").append(ver).append("\n");
-        // info.append("Version: ").append(ver).append("\n");
-        
-        // ASCII art banner
+        info.append(activeProfile.displayName()).append(" Version: ").append(ver).append("\n");
+
+        // ASCII art banner — provided by the active profile
         info.append("\n");
-        info.append(" _           ____ _     ___ \n");
-        info.append("| |   _   _ / ___| |   |_ _|\n");
-        info.append("| |  | | | | |   | |    | | \n");
-        info.append("| |__| |_| | |___| |___ | | \n");
-        info.append("|_____\\__,_|\\____|_____|___|\n");
+        info.append(activeProfile.bannerText());
         info.append("\n");
         
         if (includeLucee) {

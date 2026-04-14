@@ -1277,8 +1277,8 @@ public class LuceeServerConfig {
             String placeholder = matcher.group(1);
             String replacement = null;
             
-            // Skip secret placeholders — handled separately
-            if (placeholder.startsWith("secret:")) {
+            // Skip secret and project placeholders — handled separately
+            if (placeholder.startsWith("secret:") || placeholder.startsWith("project:")) {
                 matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(matcher.group(0)));
                 continue;
             }
@@ -1366,7 +1366,48 @@ public class LuceeServerConfig {
             return node;
         }
     }
-    
+
+    /**
+     * Recursively replace {@code #project:path#} placeholders in all text values of a JSON node
+     * with the absolute path of the project directory.
+     *
+     * <p>This follows the same {@code #prefix:value#} convention as {@code #env:VAR#} and
+     * {@code #secret:NAME#}. The {@code project:} prefix is skipped during the env-var pass
+     * and resolved here after all other substitutions.</p>
+     *
+     * <p>Example: {@code jdbc:sqlite:#project:path#/db/development.db}</p>
+     */
+    public static JsonNode resolveProjectPlaceholders(JsonNode node, Path projectDir) {
+        if (node == null || projectDir == null) {
+            return node;
+        }
+        String projectPath = projectDir.toAbsolutePath().normalize().toString();
+
+        if (node.isTextual()) {
+            String text = node.asText();
+            if (text.contains("#project:path#")) {
+                return objectMapper.getNodeFactory().textNode(text.replace("#project:path#", projectPath));
+            }
+            return node;
+        } else if (node.isArray()) {
+            com.fasterxml.jackson.databind.node.ArrayNode arrayNode =
+                objectMapper.getNodeFactory().arrayNode();
+            for (JsonNode element : node) {
+                arrayNode.add(resolveProjectPlaceholders(element, projectDir));
+            }
+            return arrayNode;
+        } else if (node.isObject()) {
+            com.fasterxml.jackson.databind.node.ObjectNode objNode =
+                objectMapper.getNodeFactory().objectNode();
+            node.fields().forEachRemaining(entry -> {
+                objNode.set(entry.getKey(), resolveProjectPlaceholders(entry.getValue(), projectDir));
+            });
+            return objNode;
+        } else {
+            return node;
+        }
+    }
+
     /**
      * Substitute a single config field value: first applies new #env:VAR# syntax
      * (and deprecated bare #VAR#), then falls back to deprecated ${VAR} syntax
@@ -1932,6 +1973,11 @@ public class LuceeServerConfig {
         // If no provider is configured but we have a local LuCLI store, inject
         // a fallback LuCLI local provider so Lucee can resolve secrets natively.
         result = LucliSecretProviderSupport.ensureFallbackSecretProvider(result, objectMapper);
+
+        // Resolve #project:path# placeholders in all text values
+        if (result != null && projectDir != null) {
+            result = resolveProjectPlaceholders(result, projectDir);
+        }
 
         return result;
     }

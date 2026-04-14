@@ -5,6 +5,8 @@ import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.lucee.lucli.LuCLI;
+
 /**
  * Centralized LuCLI path resolution.
  *
@@ -66,7 +68,8 @@ public final class LucliPaths {
             if (resolvedUserHome == null || resolvedUserHome.trim().isEmpty()) {
                 resolvedUserHome = System.getProperty("user.home");
             }
-            resolvedHome = Paths.get(resolvedUserHome, ".lucli");
+            String homeDirName = LuCLI.getActiveProfile().homeDirName();
+            resolvedHome = Paths.get(resolvedUserHome, homeDirName);
             source = "default";
         }
 
@@ -79,9 +82,9 @@ public final class LucliPaths {
             Path normalizedHome = resolvedHome.toAbsolutePath().normalize();
             Path homeParent = normalizedHome.getParent();
             if (homeParent == null) {
-                resolvedBackups = normalizedHome.resolveSibling(".lucli_backups");
+                resolvedBackups = normalizedHome.resolveSibling(LuCLI.getActiveProfile().backupsDirName());
             } else {
-                resolvedBackups = homeParent.resolve(".lucli_backups");
+                resolvedBackups = homeParent.resolve(LuCLI.getActiveProfile().backupsDirName());
             }
         }
 
@@ -95,8 +98,8 @@ public final class LucliPaths {
         Path normalizedHome = lucliHome.toAbsolutePath().normalize();
         Path parent = normalizedHome.getParent();
         Path defaultBackups = parent == null
-            ? normalizedHome.resolveSibling(".lucli_backups")
-            : parent.resolve(".lucli_backups");
+            ? normalizedHome.resolveSibling(LuCLI.getActiveProfile().backupsDirName())
+            : parent.resolve(LuCLI.getActiveProfile().backupsDirName());
         return forHome(normalizedHome, source, defaultBackups);
     }
 
