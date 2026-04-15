@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
-
+- **CI Test Result Publishing Permissions:** Updated GitHub Actions test jobs to grant `pull-requests: write` and `issues: write` so `EnricoMi/publish-unit-test-result-action` can post PR comments without failing Linux unit/integration jobs with `403 Resource not accessible by integration`.
 - **Server Runtime Prewarm Flag (`--prewarm`):** Added `--prewarm` support to both `lucli server start` and `lucli server run` to pre-download runtime artifacts and exit without starting a server. LuCLI now prewarms Lucee Express for `lucee-express` runtime, prewarms Lucee JARs for `tomcat`/`jetty` runtimes, and reports a no-download message for `docker` runtime.
 - **Server Header Shows Generated Lucee Config Path:** When server startup writes `.CFConfig.json`, LuCLI now prints `Generated lucee config in: <path>` alongside existing startup header lines so the effective Lucee config file location is explicit.
 - **Fix: Profile-Aware Home Directory in Script Engine:** `LuceeScriptEngine.getLucliHomeDirectory()` now uses the active CLI profile's home directory instead of a hardcoded `~/.lucli` path. This ensures that `BaseModule.cfc` and other shared resources are provisioned to the correct home directory (e.g. `~/.wheels/modules/` when running as `wheels`).
