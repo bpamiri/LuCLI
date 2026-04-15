@@ -125,6 +125,117 @@ class ServerCommandHandlerTest {
                 "Dry-run output should include one-shot key=value override");
         assertTrue(after.has("dependencies"), "Dependencies block must remain intact");
     }
+    @Test
+    void serverStartPrewarm_tomcatRuntimeUsesCachedJarAndDoesNotMutateLuceeJson() throws Exception {
+        Path configFile = tempDir.resolve("lucee.json");
+        Files.writeString(configFile, """
+            {
+              "name": "prewarm-tomcat-test",
+              "lucee": {
+                "version": "6.2.2.91",
+                "variant": "standard"
+              },
+              "runtime": {
+                "type": "tomcat"
+              },
+              "dependencies": {
+                "framework-three": {
+                  "version": "3.0.0",
+                  "mapping": "/framework-three",
+                  "installPath": "dependencies/framework-three"
+                }
+              }
+            }
+            """);
+
+        JsonNode before = MAPPER.readTree(Files.readString(configFile));
+
+        Path lucliHome = tempDir.resolve(".lucli-home-prewarm-tomcat");
+        Path cachedJar = lucliHome.resolve("jars").resolve("lucee-6.2.2.91.jar");
+        Files.createDirectories(cachedJar.getParent());
+        Files.writeString(cachedJar, "stub-jar");
+
+        String previousLucliHome = System.getProperty("lucli.home");
+        System.setProperty("lucli.home", lucliHome.toString());
+        try {
+            ServerCommandHandler handler = new ServerCommandHandler(true, tempDir);
+            String output = handler.executeCommand("server", new String[] {
+                    "start", "--prewarm"
+            });
+
+            JsonNode after = MAPPER.readTree(Files.readString(configFile));
+
+            assertEquals(before, after, "start --prewarm must not modify lucee.json");
+            assertNotNull(output);
+            assertTrue(output.contains("Runtime prewarm complete"),
+                    "Prewarm output should confirm completion");
+            assertTrue(output.contains("Runtime:       tomcat"),
+                    "Prewarm output should report tomcat runtime");
+            assertTrue(output.contains(cachedJar.toString()),
+                    "Prewarm output should include cached Lucee JAR path");
+            assertTrue(Files.exists(cachedJar), "Cached Lucee JAR should still exist after prewarm");
+        } finally {
+            if (previousLucliHome == null) {
+                System.clearProperty("lucli.home");
+            } else {
+                System.setProperty("lucli.home", previousLucliHome);
+            }
+        }
+    }
+
+    @Test
+    void serverRunPrewarm_versionOverrideUsesCachedExpressAndDoesNotMutateLuceeJson() throws Exception {
+        Path configFile = tempDir.resolve("lucee.json");
+        Files.writeString(configFile, """
+            {
+              "name": "prewarm-run-test",
+              "lucee": {
+                "version": "6.2.2.91"
+              },
+              "dependencies": {
+                "framework-four": {
+                  "version": "4.0.0",
+                  "mapping": "/framework-four",
+                  "installPath": "dependencies/framework-four"
+                }
+              }
+            }
+            """);
+
+        JsonNode before = MAPPER.readTree(Files.readString(configFile));
+
+        String overriddenVersion = "7.0.1.100-RC";
+        Path lucliHome = tempDir.resolve(".lucli-home-prewarm-run");
+        Path cachedExpressDir = lucliHome.resolve("express").resolve(overriddenVersion);
+        Files.createDirectories(cachedExpressDir);
+
+        String previousLucliHome = System.getProperty("lucli.home");
+        System.setProperty("lucli.home", lucliHome.toString());
+        try {
+            ServerCommandHandler handler = new ServerCommandHandler(true, tempDir);
+            String output = handler.executeCommand("server", new String[] {
+                    "run", "--prewarm", "--version", overriddenVersion
+            });
+
+            JsonNode after = MAPPER.readTree(Files.readString(configFile));
+
+            assertEquals(before, after, "run --prewarm must not modify lucee.json");
+            assertNotNull(output);
+            assertTrue(output.contains("Runtime prewarm complete"),
+                    "Prewarm output should confirm completion");
+            assertTrue(output.contains("Lucee Version: " + overriddenVersion),
+                    "Prewarm output should include the overridden Lucee version");
+            assertTrue(output.contains(cachedExpressDir.toString()),
+                    "Prewarm output should include cached Lucee Express path");
+            assertTrue(Files.exists(cachedExpressDir), "Cached Lucee Express directory should remain available");
+        } finally {
+            if (previousLucliHome == null) {
+                System.clearProperty("lucli.home");
+            } else {
+                System.setProperty("lucli.home", previousLucliHome);
+            }
+        }
+    }
 
     @Test
     void serverStartDryRun_usesGlobalEnvironmentFallbackWhenNoEnvFlag() throws Exception {

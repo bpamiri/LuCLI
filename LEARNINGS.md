@@ -55,3 +55,12 @@ Append new entries at the bottom under the appropriate date/session.
 ## 2026-04-10
 
 - Server lifecycle commands should resolve environment with explicit-first precedence: `--env/--environment` on `server start/run` wins, and only when missing should command handling fall back to `LuCLI.getCurrentEnvironment()` (which includes `LUCLI_ENV`).
+
+## 2026-04-14
+
+- `LuceeServerConfig.writeCfConfigIfPresent(...)` is the common write path used across runtime providers (`lucee-express`, `tomcat`, `jetty`) and sandbox flows, so startup messaging about generated `.CFConfig.json` should be emitted there to stay consistent for `server start` and `server run`.
+
+## 2026-04-15
+
+- Adding or changing `server` CLI flags requires updating multiple surfaces in sync: Picocli options in `src/main/java/org/lucee/lucli/cli/commands/ServerCommand.java`, manual parser logic in `src/main/java/org/lucee/lucli/server/ServerCommandHandler.java`, terminal completion metadata in `src/main/java/org/lucee/lucli/LucliCompleter.java`, and human-readable help text in `src/main/resources/text/server-help.txt`.
+- In GitHub Actions, `EnricoMi/publish-unit-test-result-action` can create checks with `checks: write` but PR comment publishing still requires additional token scope; add `pull-requests: write` and `issues: write` at the job level (or disable comments) to avoid `403 Resource not accessible by integration` on PR runs.
