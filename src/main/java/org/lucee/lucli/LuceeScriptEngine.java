@@ -15,6 +15,7 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptException;
 
 import org.lucee.lucli.modules.ModuleCommand;
+import org.lucee.lucli.paths.LucliPaths;
 import org.lucee.lucli.modules.ModuleConfig;
 import org.lucee.lucli.modules.ModuleRuntimeConfigResolver;
 import org.lucee.lucli.secrets.LucliSecretProviderSupport;
@@ -995,23 +996,25 @@ public class LuceeScriptEngine {
     }
     
     /**
-     * Get the lucli home directory (~/.lucli)
+     * Get the CLI home directory, respecting the active profile.
+     * Returns {@code ~/.wheels} when running as {@code wheels},
+     * {@code ~/.lucli} otherwise.
      */
     private Path getLucliHomeDirectory() throws IOException {
-        Path homeDir = Paths.get(System.getProperty("user.home"), ".lucli");
+        Path homeDir = LucliPaths.resolve().home();
         if (!Files.exists(homeDir)) {
             Files.createDirectories(homeDir);
             if (isVerboseMode()) {
-                System.out.println("Created lucli home directory: " + homeDir);
+                System.out.println("Created home directory: " + homeDir);
             }
         }
         return homeDir;
     }
     
     /**
-     * Ensure the shared BaseModule.cfc in ~/.lucli/modules is in sync with the
-     * version bundled in this LuCLI JAR. We pin the file to the LuCLI version,
-     * so it is only refreshed when LuCLI itself is upgraded.
+     * Ensure the shared BaseModule.cfc in the active profile's modules directory
+     * is in sync with the version bundled in this LuCLI JAR. We pin the file to
+     * the LuCLI version, so it is only refreshed when LuCLI itself is upgraded.
      */
     private void ensureBaseModuleUpToDate() {
         if (baseModuleEnsured) {
