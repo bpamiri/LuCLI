@@ -10,10 +10,23 @@ Commands:
     --disable-lucee          Start as static server (enableLucee=false for this start)
     --enable-lucee           Explicitly enable Lucee CFML engine for this start
     --warmup                 Enable Lucee warmup mode for this start
+    --prewarm                Download runtime artifacts and exit without starting
     --agents LIST            Comma-separated agent IDs to enable for this start
     --enable-agent NAME      Enable a specific agent for this start
     --disable-agent NAME     Disable a specific agent for this start
     --no-agents              Disable all agents for this start
+  run [options]              Run a Lucee server in foreground (Ctrl+C to stop)
+    --version VERSION        Specify Lucee version
+    --name NAME              Specify custom server name
+    --force                  Replace existing server
+    --disable-lucee          Run as static server (enableLucee=false for this run)
+    --enable-lucee           Explicitly enable Lucee CFML engine for this run
+    --warmup                 Enable Lucee warmup mode for this run
+    --prewarm                Download runtime artifacts and exit without starting
+    --agents LIST            Comma-separated agent IDs to enable for this run
+    --enable-agent NAME      Enable a specific agent for this run
+    --disable-agent NAME     Disable a specific agent for this run
+    --no-agents              Disable all agents for this run
   stop [options]             Stop the server for the current directory
     --name NAME              Stop a specific server by name
     --config FILE            Resolve server name from an alternate config file
@@ -40,6 +53,7 @@ Examples:
   lucli server start --version 6.1.0.123        # Start server with specific version
   lucli server start --agents luceedebug        # Start with only the luceedebug agent enabled
   lucli server start --enable-agent luceedebug  # Enable luceedebug in addition to default agents
+  lucli server start --prewarm                  # Download runtime artifacts only (no start)
                                                 
   lucli server start --no-agents                # Start with all agents disabled
   lucli server stop                             # Stop the server for current directory

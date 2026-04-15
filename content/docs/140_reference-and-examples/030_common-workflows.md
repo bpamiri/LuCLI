@@ -108,6 +108,23 @@ See the [Modules](../040_cfml-execution/040_modules/) page for more on module st
 
 For full agent configuration options, see [Server Agents](../090_monitoring-and-agents/020_server-agents/).
 
+## Prewarm runtime artifacts in CI/container builds
+
+Use `--prewarm` during your build stage so runtime downloads are cached before the container/app starts.
+
+```bash
+# Build/CI step: resolve config + env, cache runtime artifacts, do not start server
+lucli server start --prewarm --env=prod
+```
+
+Then, at runtime, start normally:
+
+```bash
+lucli server start --env=prod
+```
+
+This helps avoid first-request startup delays caused by downloading Lucee artifacts when the container boots.
+
 ## Typical development loop
 
 A common day‑to‑day loop looks like:

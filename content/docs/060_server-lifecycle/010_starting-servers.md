@@ -100,6 +100,32 @@ lucli server start --version 6.2.2.91
 
 The chosen version is recorded in `lucee.json` under `version`. LuCLI downloads the engine the first time it is needed, then reuses the cached copy for subsequent starts.
 
+## Prewarm runtime artifacts (`--prewarm`)
+
+Use `--prewarm` when you want LuCLI to download/cache runtime artifacts ahead of time without actually starting a server process.
+
+```bash
+# Prewarm using current lucee.json/runtime settings
+lucli server start --prewarm
+
+# Prewarm with a one-shot version override
+lucli server run --prewarm --version 7.0.1.100-RC
+```
+
+What `--prewarm` does:
+
+- Loads `lucee.json`, applies `--env` (or `LUCLI_ENV` fallback), and applies one-shot overrides such as `--version`.
+- Downloads and caches what that runtime needs.
+- Exits successfully without launching Tomcat/Jetty or creating a running server instance.
+
+Runtime-specific behavior:
+
+- `runtime.type=lucee-express`: pre-downloads/caches Lucee Express under `~/.lucli/express/<version>/`
+- `runtime.type=tomcat` or `runtime.type=jetty`: pre-downloads/caches the Lucee JAR under `~/.lucli/jars/`
+- `runtime.type=docker`: no Lucee Express/JAR download is required, so LuCLI reports that no runtime artifact download is needed
+
+`--prewarm` is intended for CI/build pipelines or container images where you want startup-time downloads to happen earlier in the build stage.
+
 ## Environments (`--env`)
 
 You can define environments (such as `dev`, `staging`, `prod`) in the `environments` section of `lucee.json` and select one at startup:

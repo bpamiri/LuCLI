@@ -501,7 +501,7 @@ public class LucliCompleter implements Completer {
         
         if (words.size() == 2) {
             // Complete server subcommands
-            String[] serverSubcommands = {"start", "stop", "status", "list", "prune", "config", "lock", "unlock", "monitor", "log", "debug"};
+            String[] serverSubcommands = {"start", "run", "stop", "status", "list", "prune", "config", "lock", "unlock", "monitor", "log", "debug"};
             String partial = words.get(1);
             
             for (String subcommand : serverSubcommands) {
@@ -600,6 +600,8 @@ public class LucliCompleter implements Completer {
         switch (subcommand.toLowerCase()) {
             case "start":
                 return "Start a Lucee server";
+            case "run":
+                return "Run a Lucee server in foreground";
             case "stop":
                 return "Stop a running server";
             case "status":
@@ -632,6 +634,8 @@ public class LucliCompleter implements Completer {
         switch (subcommand.toLowerCase()) {
             case "start":
                 return "🚀";
+            case "run":
+                return "🏃";
             case "stop":
                 return "🛑";
             case "status":
@@ -694,7 +698,10 @@ public class LucliCompleter implements Completer {
         
         switch (subcommand.toLowerCase()) {
             case "start":
-                flags = new String[]{"--version", "--name", "--force", "--webroot", "-v", "-n", "-f"};
+                flags = new String[]{"--version", "--name", "--force", "--webroot", "--prewarm", "-v", "-n", "-f"};
+                break;
+            case "run":
+                flags = new String[]{"--version", "--name", "--force", "--webroot", "--prewarm", "-v", "-n", "-f"};
                 break;
             case "stop":
                 flags = new String[]{"--name", "--config", "--all", "-n", "-c"};
@@ -762,6 +769,8 @@ public class LucliCompleter implements Completer {
             case "--force":
             case "-f":
                 return "Force replace existing server";
+            case "--prewarm":
+                return "Download runtime artifacts and exit without starting";
             case "--all":
             case "-a":
                 return "Apply to all servers";
