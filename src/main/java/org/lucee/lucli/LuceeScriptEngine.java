@@ -1013,8 +1013,10 @@ public class LuceeScriptEngine {
     
     /**
      * Ensure the shared BaseModule.cfc in the active profile's modules directory
-     * is in sync with the version bundled in this LuCLI JAR. We pin the file to
-     * the LuCLI version, so it is only refreshed when LuCLI itself is upgraded.
+     * matches the copy bundled in this LuCLI JAR. Compared by byte-equality so
+     * dev iterations (modifying src/main/resources/modules/BaseModule.cfc)
+     * refresh the installed copy without needing a version bump. Cached in-JVM
+     * so the check runs once per process.
      */
     private void ensureBaseModuleUpToDate() {
         if (baseModuleEnsured) {
@@ -1022,57 +1024,42 @@ public class LuceeScriptEngine {
         }
 
         try {
-            // Resolve ~/.lucli/modules
             Path lucliHome = getLucliHomeDirectory();
             Path modulesDir = lucliHome.resolve("modules");
             Files.createDirectories(modulesDir);
-
-            // Determine current LuCLI version
-            String currentVersion = LuCLI.getVersion();
-            if (currentVersion == null || currentVersion.trim().isEmpty()) {
-                currentVersion = "unknown";
-            }
-
-            // Version marker file for BaseModule
-            Path versionFile = modulesDir.resolve(".BaseModule.version");
-            String storedVersion = null;
-            if (Files.exists(versionFile)) {
-                try {
-                    storedVersion = Files.readString(versionFile).trim();
-                } catch (IOException e) {
-                    if (isDebugMode()) {
-                        System.err.println("Warning: Failed to read BaseModule version file: " + e.getMessage());
-                    }
-                }
-            }
-
             Path targetBaseModule = modulesDir.resolve("BaseModule.cfc");
 
-            boolean needsUpdate = !Files.exists(targetBaseModule) || storedVersion == null || !storedVersion.equals(currentVersion);
+            // Read bundled BaseModule bytes from JAR
+            byte[] jarBytes;
+            try (java.io.InputStream is = LuceeScriptEngine.class.getResourceAsStream("/modules/BaseModule.cfc")) {
+                if (is == null) {
+                    if (isDebugMode()) {
+                        System.err.println("Warning: BaseModule.cfc resource not found in JAR");
+                    }
+                    return;
+                }
+                jarBytes = is.readAllBytes();
+            }
+
+            // Refresh on-disk copy when missing or content differs
+            boolean needsUpdate = true;
+            if (Files.exists(targetBaseModule)) {
+                byte[] diskBytes = Files.readAllBytes(targetBaseModule);
+                needsUpdate = !java.util.Arrays.equals(jarBytes, diskBytes);
+            }
 
             if (needsUpdate) {
-                // Copy BaseModule.cfc from JAR resources into ~/.lucli/modules
-                try (java.io.InputStream is = LuceeScriptEngine.class.getResourceAsStream("/modules/BaseModule.cfc")) {
-                    if (is == null) {
-                        if (isDebugMode()) {
-                            System.err.println("Warning: BaseModule.cfc resource not found in JAR");
-                        }
-                        return;
-                    }
-                    Files.copy(is, targetBaseModule, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
+                Files.write(targetBaseModule, jarBytes);
 
-                // Persist the LuCLI version this BaseModule.cfc is synced with
-                try {
-                    Files.writeString(versionFile, currentVersion + System.lineSeparator());
-                } catch (IOException e) {
-                    if (isDebugMode()) {
-                        System.err.println("Warning: Failed to write BaseModule version file: " + e.getMessage());
-                    }
+                // Clean up legacy version marker from previous sync scheme
+                Path legacyVersionFile = modulesDir.resolve(".BaseModule.version");
+                if (Files.exists(legacyVersionFile)) {
+                    try { Files.delete(legacyVersionFile); }
+                    catch (IOException ignored) { /* best-effort */ }
                 }
 
                 if (isVerboseMode()) {
-                    System.out.println("Synchronized ~/.lucli/modules/BaseModule.cfc for LuCLI version " + currentVersion);
+                    System.out.println("Synchronized " + targetBaseModule);
                 }
             }
         } catch (IOException e) {
@@ -1080,8 +1067,6 @@ public class LuceeScriptEngine {
                 System.err.println("Warning: Failed to ensure BaseModule.cfc is up to date: " + e.getMessage());
             }
         } finally {
-            // Avoid repeating the check within the same JVM; version-based
-            // marker ensures we refresh on future LuCLI upgrades.
             baseModuleEnsured = true;
         }
     }
