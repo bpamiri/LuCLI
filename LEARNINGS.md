@@ -55,3 +55,18 @@ Append new entries at the bottom under the appropriate date/session.
 ## 2026-04-10
 
 - Server lifecycle commands should resolve environment with explicit-first precedence: `--env/--environment` on `server start/run` wins, and only when missing should command handling fall back to `LuCLI.getCurrentEnvironment()` (which includes `LUCLI_ENV`).
+
+## 2026-04-14
+
+- `LuceeServerConfig.writeCfConfigIfPresent(...)` is the common write path used across runtime providers (`lucee-express`, `tomcat`, `jetty`) and sandbox flows, so startup messaging about generated `.CFConfig.json` should be emitted there to stay consistent for `server start` and `server run`.
+
+## 2026-04-15
+
+- Adding or changing `server` CLI flags requires updating multiple surfaces in sync: Picocli options in `src/main/java/org/lucee/lucli/cli/commands/ServerCommand.java`, manual parser logic in `src/main/java/org/lucee/lucli/server/ServerCommandHandler.java`, terminal completion metadata in `src/main/java/org/lucee/lucli/LucliCompleter.java`, and human-readable help text in `src/main/resources/text/server-help.txt`.
+- In GitHub Actions, `EnricoMi/publish-unit-test-result-action` can create checks with `checks: write` but PR comment publishing still requires additional token scope; add `pull-requests: write` and `issues: write` at the job level (or disable comments) to avoid `403 Resource not accessible by integration` on PR runs.
+
+## 2026-04-16
+
+- `type: "extension"` dependencies now have an explicit install-time materialization toggle via `dependencySettings.materializeExtensionsOnInstall` (default `true`). When enabled, `deps install` writes concrete `.lex` files to `installPath`; when disabled, it keeps metadata/cache-style behavior.
+- For end-to-end extension lifecycle coverage, the reliable integration assertion is that a local `.lex` dependency appears at `~/.lucli/servers/<server>/lucee-server/deploy/<file>.lex` after `deps install` + `server start`; deploy-path existence is a more stable contract check than strict byte-for-byte equality in BATS.
+- Lucee extension provider IDs can appear in a non-canonical `8-4-4-16` hex grouping (for example `465E1E35-2425-4F4E-8B3FAB638BD7280A`), so extension ID validation/resolution must support that format in addition to canonical UUID and 32-hex forms.

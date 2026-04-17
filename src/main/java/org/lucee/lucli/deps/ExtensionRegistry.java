@@ -129,13 +129,14 @@ public class ExtensionRegistry {
         if (nameOrSlug == null || nameOrSlug.trim().isEmpty()) {
             return null;
         }
+        String key = nameOrSlug.trim();
         
-        // If it's already a UUID format, return as-is
-        if (isUUID(nameOrSlug)) {
-            return nameOrSlug;
+        // If it's already an ID format, return as-is
+        if (isExtensionId(key)) {
+            return key;
         }
         
-        ExtensionInfo info = EXTENSIONS.get(nameOrSlug.toLowerCase().trim());
+        ExtensionInfo info = EXTENSIONS.get(key.toLowerCase());
         return info != null ? info.id : null;
     }
     
@@ -155,10 +156,12 @@ public class ExtensionRegistry {
     /**
      * Check if a string is a UUID format.
      */
-    private static boolean isUUID(String str) {
-        // UUID format: 8-4-4-4-12 hex digits
+    private static boolean isExtensionId(String str) {
+        // Canonical UUID format: 8-4-4-4-12 hex digits
         return str.matches("^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$") ||
-               // Also support without dashes (Lucee style)
+               // Lucee extension-provider IDs commonly use 8-4-4-16 grouping.
+               str.matches("^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{16}$") ||
+               // Also support compact 32-hex format
                str.matches("^[0-9A-Fa-f]{32}$");
     }
     

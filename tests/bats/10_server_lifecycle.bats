@@ -128,3 +128,53 @@ create_project_dir() {
     run_lucli server stop --name "${server_b}"
     assert_success
 }
+
+@test "local extension from deps install is deployed on server start without requiring useLockFile" {
+    local project_dir
+    local server_name
+    local port
+    local source_ext
+    local installed_ext
+    local deployed_ext
+
+    project_dir="$(create_project_dir)"
+    server_name="lifecycle-local-ext"
+    port="$(find_available_test_port)"
+    source_ext="${project_dir}/extensions/fake-local.lex"
+    installed_ext="${project_dir}/dependencies/extensions/fake-local.lex"
+    deployed_ext="${LUCLI_HOME}/servers/${server_name}/lucee-server/deploy/fake-local.lex"
+
+    mkdir -p "${project_dir}/extensions"
+    printf '%s\n' "fake-lex-content" > "${source_ext}"
+
+    cat > "${project_dir}/lucee.json" <<EOF
+{
+  "name": "${server_name}",
+  "port": ${port},
+  "openBrowser": false,
+  "dependencies": {
+    "fake-local-ext": {
+      "type": "extension",
+      "path": "./extensions/fake-local.lex",
+      "installPath": "dependencies/extensions/fake-local.lex"
+    }
+  }
+}
+EOF
+
+    run_lucli_in_dir "${project_dir}" deps install
+    assert_success
+    [[ -f "${installed_ext}" ]]
+    [[ ! -f "${project_dir}/lucee-lock.json" ]]
+
+    run_lucli server start "${project_dir}"
+    assert_success
+    assert_output_contains "Server started successfully"
+    assert_output_contains "${server_name}"
+    [[ -f "${deployed_ext}" ]]
+
+    [[ -s "${deployed_ext}" ]]
+
+    run_lucli server stop --name "${server_name}"
+    assert_success
+}

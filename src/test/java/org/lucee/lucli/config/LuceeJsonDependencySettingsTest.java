@@ -25,6 +25,14 @@ class LuceeJsonDependencySettingsTest {
     }
 
     @Test
+    void dependencySettings_materializeExtensionsOnInstall_defaultsToEnabled() {
+        DependencySettingsConfig settings = new DependencySettingsConfig();
+
+        assertNull(settings.getMaterializeExtensionsOnInstall());
+        assertTrue(settings.isMaterializeExtensionsOnInstallEnabled());
+    }
+
+    @Test
     void luceeJson_parsesUseLockFileWhenEnabled() throws Exception {
         Files.writeString(tempDir.resolve("lucee.json"), """
             {
@@ -91,5 +99,49 @@ class LuceeJsonDependencySettingsTest {
 
         assertEquals(Boolean.TRUE, config.getDependencySettings().getUseLockFile());
         assertTrue(config.getDependencySettings().isUseLockFileEnabled());
+    }
+
+    @Test
+    void luceeJson_parsesMaterializeExtensionsOnInstallWhenDisabled() throws Exception {
+        Files.writeString(tempDir.resolve("lucee.json"), """
+            {
+              "name": "materialize-disabled-test",
+              "dependencySettings": {
+                "materializeExtensionsOnInstall": false
+              }
+            }
+            """);
+
+        LuceeJsonConfig config = LuceeJsonConfig.load(tempDir);
+
+        assertEquals(Boolean.FALSE, config.getDependencySettings().getMaterializeExtensionsOnInstall());
+        assertFalse(config.getDependencySettings().isMaterializeExtensionsOnInstallEnabled());
+    }
+
+    @Test
+    void environmentOverride_canDisableMaterializeExtensionsOnInstall() throws Exception {
+        Files.writeString(tempDir.resolve("lucee.json"), """
+            {
+              "name": "env-materialize-disable-test",
+              "dependencySettings": {
+                "materializeExtensionsOnInstall": true
+              },
+              "environments": {
+                "prod": {
+                  "dependencySettings": {
+                    "materializeExtensionsOnInstall": false
+                  }
+                }
+              }
+            }
+            """);
+
+        LuceeJsonConfig config = LuceeJsonConfig.load(tempDir);
+        assertTrue(config.getDependencySettings().isMaterializeExtensionsOnInstallEnabled());
+
+        config.applyEnvironment("prod");
+
+        assertEquals(Boolean.FALSE, config.getDependencySettings().getMaterializeExtensionsOnInstall());
+        assertFalse(config.getDependencySettings().isMaterializeExtensionsOnInstallEnabled());
     }
 }
