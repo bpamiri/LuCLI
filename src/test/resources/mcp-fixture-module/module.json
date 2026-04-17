@@ -1,0 +1,5 @@
+{
+    "name": "mcpfixture",
+    "version": "0.0.1",
+    "description": "Test fixture module for McpCommand integration tests"
+}

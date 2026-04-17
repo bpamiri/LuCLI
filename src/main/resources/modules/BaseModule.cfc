@@ -99,7 +99,10 @@ component {
         if(len(colour) || len(style)){
             message = "#style##colour##message##reset#";
         }
-        systemOutput(message, true, true);
+        // Use dynamic Java lookup so System.setOut(...) redirection is honored.
+        // Lucee's built-in systemOutput() caches stream references at engine
+        // startup and bypasses later setOut() calls — breaking MCP capture.
+        createObject("java", "java.lang.System").out.println(message);
     }
     // Could add colours here:
 
@@ -112,9 +115,8 @@ component {
         if(!isSimpleValue(message)){
             message = serializeJson(var=message, compact=false);
         }
-        // For CLI usage (including tight loops like watch()), write directly to
-        // system output so LuCLI can surface logs immediately.
-        systemOutput(message, true, false);
+        // Dynamic Java lookup — see rationale in out() above.
+        createObject("java", "java.lang.System").err.println(message);
     }
 
     
@@ -264,7 +266,8 @@ component {
         // Functions from BaseModule to exclude from command listing
         var internalFunctions = [
             "init", "showhelp", "out", "err", "getenv", "verbose",
-            "getsecret", "getabsolutepath", "executecommand", "version"
+            "getsecret", "getabsolutepath", "executecommand", "version",
+            "mcphiddentools"
         ];
 
         // Collect public command functions

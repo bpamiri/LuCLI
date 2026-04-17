@@ -66,6 +66,20 @@ public class McpCommand implements Callable<Integer> {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
+    /**
+     * Public functions inherited from BaseModule (or framework conventions
+     * like mcpHiddenTools) that are never exposed as MCP tools. Mirrors the
+     * exclusion used by BaseModule.cfc's showHelp(). Compared lowercase
+     * because Lucee normalizes function names to lowercase in metadata.
+     */
+    private static final java.util.Set<String> BASE_MODULE_INTERNALS =
+            java.util.Set.of(
+                    "init", "out", "err", "getenv", "verbose",
+                    "getsecret", "getabsolutepath", "executecommand",
+                    "version", "showhelp",
+                    "mcphiddentools"
+            );
+
     private boolean initialized = false;
     private String negotiatedProtocolVersion = null;
 
@@ -264,6 +278,9 @@ public class McpCommand implements Callable<Integer> {
     private List<Map<String, Object>> listToolsForModule(String mod) throws Exception {
         Array meta = LuceeScriptEngine.getInstance().getComponentMetadata("modules." + mod + ".Module");
 
+        // Per-module hidden list returned by optional mcpHiddenTools() function
+        java.util.Set<String> moduleHidden = getModuleHiddenTools(mod);
+
         List<Map<String, Object>> tools = new ArrayList<>();
         for (int i = 1; i <= meta.size(); i++) {
             Object itemObj = meta.get(i, null);
@@ -274,6 +291,16 @@ public class McpCommand implements Callable<Integer> {
 
             String name = getString(fn, "name");
             if (name == null || name.isBlank()) {
+                continue;
+            }
+
+            // Skip BaseModule internals and framework convention functions
+            if (BASE_MODULE_INTERNALS.contains(name.toLowerCase())) {
+                continue;
+            }
+
+            // Skip module-declared hidden tools
+            if (moduleHidden.contains(name.toLowerCase())) {
                 continue;
             }
 
@@ -293,6 +320,43 @@ public class McpCommand implements Callable<Integer> {
         }
 
         return tools;
+    }
+
+    /**
+     * If the module defines a public `mcpHiddenTools()` function returning an
+     * array of tool names, return those names (lowercase). Otherwise empty.
+     *
+     * Invoked once per tools/list request. Stdout/stderr are briefly
+     * redirected to discard any incidental output from the invocation, since
+     * tools/list has no active MCP capture buffer.
+     */
+    private java.util.Set<String> getModuleHiddenTools(String mod) {
+        PrintStream origOut = System.out;
+        PrintStream origErr = System.err;
+        java.io.ByteArrayOutputStream sink = new java.io.ByteArrayOutputStream();
+        PrintStream silent = new PrintStream(sink, true, StandardCharsets.UTF_8);
+        try {
+            System.setOut(silent);
+            System.setErr(silent);
+            Object result = LuceeScriptEngine.getInstance()
+                    .executeModuleAndReturn(mod, new String[] { "mcpHiddenTools" });
+            if (result instanceof Array) {
+                Array arr = (Array) result;
+                java.util.Set<String> hidden = new java.util.HashSet<>();
+                for (int i = 1; i <= arr.size(); i++) {
+                    Object v = arr.get(i, null);
+                    if (v != null) hidden.add(v.toString().toLowerCase());
+                }
+                return hidden;
+            }
+        } catch (Exception e) {
+            // Function may not exist on this module — that's fine.
+            if (LuCLI.debug) e.printStackTrace();
+        } finally {
+            System.setOut(origOut);
+            System.setErr(origErr);
+        }
+        return java.util.Collections.emptySet();
     }
 
     private Map<String, Object> buildInputSchema(Struct fn) {
