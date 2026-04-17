@@ -383,12 +383,11 @@ public class LuceeScriptEngine {
 
 
     /**
-     * Execute a module by name with arguments
-     * @param moduleName
-     * @param scriptArgs
-     * @throws Exception
+     * Execute a module function and return its result. The result is whatever
+     * the invoked function returned (or null). Callers that want the legacy
+     * "print-if-non-null" CLI behavior should use {@link #executeModule}.
      */
-    public void executeModule(String moduleName, String[] scriptArgs) throws Exception {
+    public Object executeModuleAndReturn(String moduleName, String[] scriptArgs) throws Exception {
         
             // Ensure shared BaseModule.cfc in ~/.lucli/modules matches this LuCLI version
             ensureBaseModuleUpToDate();
@@ -449,10 +448,19 @@ public class LuceeScriptEngine {
             }
             engine.eval(script);
             Object results = engine.get("results");
-            if(results !=null){
-                StringOutput.getInstance().println(results.toString());
-            }
             Timer.stop("Module Execution: " + moduleName);
+            return results;
+    }
+
+    /**
+     * Execute a module by name, printing its non-null return value via
+     * StringOutput (legacy CLI behavior).
+     */
+    public void executeModule(String moduleName, String[] scriptArgs) throws Exception {
+        Object results = executeModuleAndReturn(moduleName, scriptArgs);
+        if (results != null) {
+            StringOutput.getInstance().println(results.toString());
+        }
     }
 
     // /**

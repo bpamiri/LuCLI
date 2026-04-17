@@ -146,6 +146,32 @@ class McpCommandTest {
         assertTrue(names.contains("greet"), "expected greet. Got: " + names);
     }
 
+    @Test
+    void toolsListHonorsMcpHiddenToolsDeclaration() throws Exception {
+        List<JsonNode> responses = runMcpSession(List.of(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}",
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}"
+        ));
+
+        JsonNode listResp = responses.stream()
+                .filter(n -> n.has("id") && n.get("id").asInt() == 2)
+                .findFirst()
+                .orElseThrow();
+
+        List<String> names = new ArrayList<>();
+        listResp.get("result").get("tools").forEach(
+                t -> names.add(t.get("name").asText().toLowerCase()));
+
+        // Fixture module declares mcpHiddenTools() returns ["secret"]
+        assertFalse(names.contains("secret"),
+                "tool 'secret' should be hidden via mcpHiddenTools(). Got: " + names);
+
+        // Other fixture tools remain visible
+        assertTrue(names.contains("echo"), "expected echo. Got: " + names);
+        assertTrue(names.contains("greet"), "expected greet. Got: " + names);
+    }
+
     // Send the given JSON-RPC lines to `dev-lucli.sh mcp mcpfixture` as a
     // subprocess. Returns each parsed response as a JsonNode.
     private List<JsonNode> runMcpSession(List<String> requests) throws Exception {
