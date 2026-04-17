@@ -266,7 +266,8 @@ component {
         // Functions from BaseModule to exclude from command listing
         var internalFunctions = [
             "init", "showhelp", "out", "err", "getenv", "verbose",
-            "getsecret", "getabsolutepath", "executecommand", "version"
+            "getsecret", "getabsolutepath", "executecommand", "version",
+            "mcphiddentools"
         ];
 
         // Collect public command functions
