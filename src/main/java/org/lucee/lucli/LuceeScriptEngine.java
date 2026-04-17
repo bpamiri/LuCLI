@@ -15,6 +15,7 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptException;
 
 import org.lucee.lucli.modules.ModuleCommand;
+import org.lucee.lucli.paths.LucliPaths;
 import org.lucee.lucli.modules.ModuleConfig;
 import org.lucee.lucli.modules.ModuleRuntimeConfigResolver;
 import org.lucee.lucli.secrets.LucliSecretProviderSupport;
@@ -382,12 +383,11 @@ public class LuceeScriptEngine {
 
 
     /**
-     * Execute a module by name with arguments
-     * @param moduleName
-     * @param scriptArgs
-     * @throws Exception
+     * Execute a module function and return its result. The result is whatever
+     * the invoked function returned (or null). Callers that want the legacy
+     * "print-if-non-null" CLI behavior should use {@link #executeModule}.
      */
-    public void executeModule(String moduleName, String[] scriptArgs) throws Exception {
+    public Object executeModuleAndReturn(String moduleName, String[] scriptArgs) throws Exception {
         
             // Ensure shared BaseModule.cfc in ~/.lucli/modules matches this LuCLI version
             ensureBaseModuleUpToDate();
@@ -448,10 +448,19 @@ public class LuceeScriptEngine {
             }
             engine.eval(script);
             Object results = engine.get("results");
-            if(results !=null){
-                StringOutput.getInstance().println(results.toString());
-            }
             Timer.stop("Module Execution: " + moduleName);
+            return results;
+    }
+
+    /**
+     * Execute a module by name, printing its non-null return value via
+     * StringOutput (legacy CLI behavior).
+     */
+    public void executeModule(String moduleName, String[] scriptArgs) throws Exception {
+        Object results = executeModuleAndReturn(moduleName, scriptArgs);
+        if (results != null) {
+            StringOutput.getInstance().println(results.toString());
+        }
     }
 
     // /**
@@ -995,23 +1004,27 @@ public class LuceeScriptEngine {
     }
     
     /**
-     * Get the lucli home directory (~/.lucli)
+     * Get the CLI home directory, respecting the active profile.
+     * Returns {@code ~/.wheels} when running as {@code wheels},
+     * {@code ~/.lucli} otherwise.
      */
     private Path getLucliHomeDirectory() throws IOException {
-        Path homeDir = Paths.get(System.getProperty("user.home"), ".lucli");
+        Path homeDir = LucliPaths.resolve().home();
         if (!Files.exists(homeDir)) {
             Files.createDirectories(homeDir);
             if (isVerboseMode()) {
-                System.out.println("Created lucli home directory: " + homeDir);
+                System.out.println("Created home directory: " + homeDir);
             }
         }
         return homeDir;
     }
     
     /**
-     * Ensure the shared BaseModule.cfc in ~/.lucli/modules is in sync with the
-     * version bundled in this LuCLI JAR. We pin the file to the LuCLI version,
-     * so it is only refreshed when LuCLI itself is upgraded.
+     * Ensure the shared BaseModule.cfc in the active profile's modules directory
+     * matches the copy bundled in this LuCLI JAR. Compared by byte-equality so
+     * dev iterations (modifying src/main/resources/modules/BaseModule.cfc)
+     * refresh the installed copy without needing a version bump. Cached in-JVM
+     * so the check runs once per process.
      */
     private void ensureBaseModuleUpToDate() {
         if (baseModuleEnsured) {
@@ -1019,57 +1032,42 @@ public class LuceeScriptEngine {
         }
 
         try {
-            // Resolve ~/.lucli/modules
             Path lucliHome = getLucliHomeDirectory();
             Path modulesDir = lucliHome.resolve("modules");
             Files.createDirectories(modulesDir);
-
-            // Determine current LuCLI version
-            String currentVersion = LuCLI.getVersion();
-            if (currentVersion == null || currentVersion.trim().isEmpty()) {
-                currentVersion = "unknown";
-            }
-
-            // Version marker file for BaseModule
-            Path versionFile = modulesDir.resolve(".BaseModule.version");
-            String storedVersion = null;
-            if (Files.exists(versionFile)) {
-                try {
-                    storedVersion = Files.readString(versionFile).trim();
-                } catch (IOException e) {
-                    if (isDebugMode()) {
-                        System.err.println("Warning: Failed to read BaseModule version file: " + e.getMessage());
-                    }
-                }
-            }
-
             Path targetBaseModule = modulesDir.resolve("BaseModule.cfc");
 
-            boolean needsUpdate = !Files.exists(targetBaseModule) || storedVersion == null || !storedVersion.equals(currentVersion);
+            // Read bundled BaseModule bytes from JAR
+            byte[] jarBytes;
+            try (java.io.InputStream is = LuceeScriptEngine.class.getResourceAsStream("/modules/BaseModule.cfc")) {
+                if (is == null) {
+                    if (isDebugMode()) {
+                        System.err.println("Warning: BaseModule.cfc resource not found in JAR");
+                    }
+                    return;
+                }
+                jarBytes = is.readAllBytes();
+            }
+
+            // Refresh on-disk copy when missing or content differs
+            boolean needsUpdate = true;
+            if (Files.exists(targetBaseModule)) {
+                byte[] diskBytes = Files.readAllBytes(targetBaseModule);
+                needsUpdate = !java.util.Arrays.equals(jarBytes, diskBytes);
+            }
 
             if (needsUpdate) {
-                // Copy BaseModule.cfc from JAR resources into ~/.lucli/modules
-                try (java.io.InputStream is = LuceeScriptEngine.class.getResourceAsStream("/modules/BaseModule.cfc")) {
-                    if (is == null) {
-                        if (isDebugMode()) {
-                            System.err.println("Warning: BaseModule.cfc resource not found in JAR");
-                        }
-                        return;
-                    }
-                    Files.copy(is, targetBaseModule, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
+                Files.write(targetBaseModule, jarBytes);
 
-                // Persist the LuCLI version this BaseModule.cfc is synced with
-                try {
-                    Files.writeString(versionFile, currentVersion + System.lineSeparator());
-                } catch (IOException e) {
-                    if (isDebugMode()) {
-                        System.err.println("Warning: Failed to write BaseModule version file: " + e.getMessage());
-                    }
+                // Clean up legacy version marker from previous sync scheme
+                Path legacyVersionFile = modulesDir.resolve(".BaseModule.version");
+                if (Files.exists(legacyVersionFile)) {
+                    try { Files.delete(legacyVersionFile); }
+                    catch (IOException ignored) { /* best-effort */ }
                 }
 
                 if (isVerboseMode()) {
-                    System.out.println("Synchronized ~/.lucli/modules/BaseModule.cfc for LuCLI version " + currentVersion);
+                    System.out.println("Synchronized " + targetBaseModule);
                 }
             }
         } catch (IOException e) {
@@ -1077,8 +1075,6 @@ public class LuceeScriptEngine {
                 System.err.println("Warning: Failed to ensure BaseModule.cfc is up to date: " + e.getMessage());
             }
         } finally {
-            // Avoid repeating the check within the same JVM; version-based
-            // marker ensures we refresh on future LuCLI upgrades.
             baseModuleEnsured = true;
         }
     }

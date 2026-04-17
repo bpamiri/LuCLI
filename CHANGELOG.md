@@ -12,7 +12,20 @@ All notable changes to this project will be documented in this file.
 - **Fix: Profile-Aware Home Directory in Script Engine:** `LuceeScriptEngine.getLucliHomeDirectory()` now uses the active CLI profile's home directory instead of a hardcoded `~/.lucli` path. This ensures that `BaseModule.cfc` and other shared resources are provisioned to the correct home directory (e.g. `~/.wheels/modules/` when running as `wheels`).
 - **Server Environment Fallback (`LUCLI_ENV`) + Docker Default:** `lucli server start` and `lucli server run` now fall back to `LUCLI_ENV` when `--env/--environment` is not provided, while still honoring explicit `--env` precedence. The Docker image now sets `LUCLI_ENV=""` by default so deployments can override it at runtime (for example `docker run -e LUCLI_ENV=prod ...`).
 - **Server Warmup Flag (`--warmup`):** Added `--warmup` support to `lucli server start` and `lucli server run` to enable Lucee build-time warmup by injecting both `LUCEE_ENABLE_WARMUP=true` and `-Dlucee.enable.warmup=true` for that invocation (without persisting changes to `lucee.json`).
+- **Fix: MCP Tool Output Capture:** `lucli mcp <module>` now correctly captures module `out()` / `err()` output into JSON-RPC response bodies. Previously, Lucee's `systemOutput()` bypassed `System.setOut()` redirection because it caches stream references at engine startup — so every MCP tool returned empty content to callers while output leaked to the terminal, contaminating the stdio protocol stream. `BaseModule` now uses `createObject("java", "java.lang.System").out.println(...)` for dynamic lookup that honors redirection.
+- **MCP Tool Hiding:** Public functions inherited from `BaseModule` (`init`, `getEnv`, `getSecret`, `verbose`, `getAbsolutePath`, `executeCommand`, `version`, `showHelp`) are now automatically excluded from MCP `tools/list` responses. Modules can additionally declare specific commands to hide with a new `mcpHiddenTools()` convention:
+
+    ```cfm
+    public array function mcpHiddenTools() {
+        return ["start", "stop", "console"];
+    }
+    ```
+
+    Hidden tools remain reachable as CLI subcommands — this is purely an MCP-surface filter for commands that are stateful, interactive, or otherwise inappropriate for autonomous agent use.
+- **Fix: BaseModule.cfc Dev Sync:** The shared `BaseModule.cfc` in the active profile's modules directory is now refreshed when its content differs from the JAR-bundled copy, instead of only when the LuCLI version number changes. Dev iterations that modify `src/main/resources/modules/BaseModule.cfc` now reach the installed copy without needing a formal version bump.
+- **`executeModuleAndReturn()` on `LuceeScriptEngine`:** Framework callers can now invoke a module function and capture its return value without triggering the legacy print-if-non-null CLI behavior. Used internally by MCP tool introspection.
 - **`#project:path#` Placeholder in Configuration:** Added `#project:path#` placeholder support for `lucee.json` configuration values (e.g. datasource DSNs). Resolved at server start alongside `#env:VAR#` and `#secret:NAME#`, replacing the token with the absolute project directory path.
+
 
 ## 0.3.3
 - **Unit Test Coverage One-Shot Script:** Added `tests/unit-tests-coverage.sh` to run Maven unit tests with JaCoCo coverage from project root and print/open generated report paths (`target/site/jacoco/index.html`).

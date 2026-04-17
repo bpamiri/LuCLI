@@ -179,6 +179,7 @@ lucli start [OPTIONS]
 | `-c, --config` | Configuration file to use (defaults to lucee.json) |
 | `--env, --environment` | Environment to use (e.g., prod, dev, staging) |
 | `--dry-run` | Show configuration without starting the server |
+| `--prewarm` | Download/cache runtime artifacts and exit without starting a server |
 | `--include-lucee` | Include Lucee CFConfig in dry-run output |
 | `--include-tomcat-web` | Include Tomcat web.xml in dry-run output |
 | `--include-tomcat-server` | Include Tomcat server.xml in dry-run output |
@@ -214,6 +215,7 @@ lucli start [OPTIONS]
 | `-c, --config` | Configuration file to use (defaults to lucee.json) |
 | `--env, --environment` | Environment to use (e.g., prod, dev, staging) |
 | `--dry-run` | Show configuration without starting the server |
+| `--prewarm` | Download/cache runtime artifacts and exit without starting a server |
 | `--include-lucee` | Include Lucee CFConfig in dry-run output |
 | `--include-tomcat-web` | Include Tomcat web.xml in dry-run output |
 | `--include-tomcat-server` | Include Tomcat server.xml in dry-run output |
@@ -248,6 +250,7 @@ lucli run [OPTIONS]
 | `-f, --force` | Force replace existing server with same name |
 | `-c, --config` | Configuration file to use (defaults to lucee.json) |
 | `--env, --environment` | Environment to use (e.g., prod, dev, staging) |
+| `--prewarm` | Download/cache runtime artifacts and exit without starting a server |
 | `--no-agents` | Disable all Java agents |
 | `--agents` | Comma-separated list of agent IDs to include |
 | `--enable-agent` | Enable a specific agent by ID (repeatable) |

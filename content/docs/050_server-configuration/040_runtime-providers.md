@@ -13,6 +13,22 @@ LuCLI supports multiple runtime providers for running your CFML applications. Th
 | **External Tomcat** | Production, enterprise | 7.x for Tomcat 10+, 6.x for Tomcat 9 | Medium |
 | **Docker** *(experimental)* | Containers, CI/CD | Determined by image | Low |
 
+### Prewarm runtime downloads (no server start)
+
+If you need to cache runtime downloads before startup (for example in CI images), use:
+
+```bash
+lucli server start --prewarm
+```
+
+LuCLI resolves your runtime from `lucee.json` and then:
+
+- **Lucee Express runtime**: downloads/caches Lucee Express to `~/.lucli/express/<version>/`
+- **External Tomcat/Jetty runtime**: downloads/caches Lucee JARs to `~/.lucli/jars/`
+- **Docker runtime**: reports that no Lucee Express/JAR download is required
+
+`--prewarm` exits without starting a server process.
+
 ## Lucee Express (Default)
 
 Lucee Express bundles Tomcat and Lucee together in a single download. This is the default runtime and requires no configuration.

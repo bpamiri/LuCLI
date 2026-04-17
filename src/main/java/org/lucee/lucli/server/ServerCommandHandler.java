@@ -120,6 +120,7 @@ public class ServerCommandHandler {
         String environment = null;
         String webrootOverride = null;
         boolean dryRun = false;
+        boolean prewarm = false;
         boolean includeEnv = false;
         boolean includeLuceeConfig = false;
         boolean includeTomcatWeb = false;
@@ -178,6 +179,8 @@ public class ServerCommandHandler {
                 }
             } else if (args[i].equals("--dry-run")) {
                 dryRun = true;
+            } else if (args[i].equals("--prewarm")) {
+                prewarm = true;
             } else if (args[i].equals("--include-env")) {
                 includeEnv = true;
             } else if (args[i].equals("--include-tomcat-web")) {
@@ -256,9 +259,14 @@ public class ServerCommandHandler {
 
         environment = resolveEnvironment(environment);
         // If sandbox mode is requested, disallow dry-run/preview flags which rely on lucee.json
-        if (sandbox && (dryRun || includeLuceeConfig || includeTomcatWeb || includeTomcatServer
+        if (sandbox && (dryRun || prewarm || includeLuceeConfig || includeTomcatWeb || includeTomcatServer
                 || includeHttpsKeystorePlan || includeHttpsRedirectRules || createConfig)) {
-            return formatOutput("❌ --sandbox cannot be combined with --dry-run, --create-config or preview flags (--include-*, --include-all).", true);
+            return formatOutput("❌ --sandbox cannot be combined with --dry-run, --prewarm, --create-config or preview flags (--include-*, --include-all).", true);
+        }
+
+        if (prewarm && (dryRun || createConfig || includeLuceeConfig || includeTomcatWeb || includeTomcatServer
+                || includeHttpsKeystorePlan || includeHttpsRedirectRules || includeEnv)) {
+            return formatOutput("❌ --prewarm cannot be combined with --dry-run, --create-config or preview flags (--include-*, --include-all).", true);
         }
 
         // --source/--dest are only meaningful together with --create-config
@@ -286,6 +294,13 @@ public class ServerCommandHandler {
 
         // Apply one-shot CLI overrides in memory for this invocation.
         LuceeServerManager.applyStartConfigOverrides(finalConfig, startConfigOverrides);
+
+        if (prewarm) {
+            if (versionOverride != null && !versionOverride.trim().isEmpty()) {
+                LuceeServerConfig.setLuceeVersion(finalConfig, versionOverride.trim());
+            }
+            return prewarmRuntimeArtifacts(serverManager, projectDir, finalConfig);
+        }
         
         // If create-config is requested, materialize the server configuration and exit without starting.
         if (createConfig) {
@@ -654,6 +669,7 @@ public class ServerCommandHandler {
         String webrootOverride = null;
         boolean sandbox = false;
         boolean dryRun = false;
+        boolean prewarm = false;
         boolean includeEnv = false;
         Integer portOverride = null;
         Boolean enableLuceeOverride = null;
@@ -698,6 +714,8 @@ public class ServerCommandHandler {
                 webrootOverride = arg.substring("--webroot=".length());
             } else if ("--dry-run".equals(arg)) {
                 dryRun = true;
+            } else if ("--prewarm".equals(arg)) {
+                prewarm = true;
             } else if ("--include-env".equals(arg)) {
                 includeEnv = true;
             } else if ("--sandbox".equals(arg)) {
@@ -743,13 +761,38 @@ public class ServerCommandHandler {
         
         environment = resolveEnvironment(environment);
         
-        // Disallow --dry-run with --sandbox
-        if (sandbox && dryRun) {
-            return formatOutput("❌ --sandbox cannot be combined with --dry-run.", true);
+        // Disallow --dry-run/--prewarm with --sandbox
+        if (sandbox && (dryRun || prewarm)) {
+            return formatOutput("❌ --sandbox cannot be combined with --dry-run or --prewarm.", true);
+        }
+
+        if (prewarm && (dryRun || includeEnv)) {
+            return formatOutput("❌ --prewarm cannot be combined with --dry-run or --include-env.", true);
         }
         
         LuceeServerManager.StartConfigOverrides startConfigOverrides =
             buildStartConfigOverrides(configOverrides, webrootOverride, portOverride, enableLuceeOverride, enableWarmupOverride);
+
+        if (prewarm) {
+            String cfgFile = configFileName != null ? configFileName : "lucee.json";
+            LuceeServerConfig.ServerConfig finalConfig = LuceeServerConfig.loadConfig(projectDir, cfgFile);
+
+            if (environment != null && !environment.trim().isEmpty()) {
+                try {
+                    finalConfig = LuceeServerConfig.applyEnvironment(finalConfig, environment, projectDir);
+                } catch (IllegalArgumentException e) {
+                    return formatOutput("❌ " + e.getMessage(), true);
+                }
+            }
+
+            LuceeServerManager.applyStartConfigOverrides(finalConfig, startConfigOverrides);
+
+            if (versionOverride != null && !versionOverride.trim().isEmpty()) {
+                LuceeServerConfig.setLuceeVersion(finalConfig, versionOverride.trim());
+            }
+
+            return prewarmRuntimeArtifacts(serverManager, projectDir, finalConfig);
+        }
         
         // If no agent-related flags were actually set, avoid passing a non-null overrides object
         if (!agentOverrides.disableAllAgents &&
@@ -867,6 +910,43 @@ public class ServerCommandHandler {
         overrides.enableLuceeOverride = enableLuceeOverride;
         overrides.enableWarmupOverride = enableWarmupOverride;
         return overrides.isEmpty() ? null : overrides;
+    }
+
+    private String prewarmRuntimeArtifacts(LuceeServerManager serverManager,
+                                           Path projectDir,
+                                           LuceeServerConfig.ServerConfig finalConfig) throws Exception {
+        LuceeServerConfig.RuntimeConfig runtimeConfig = LuceeServerConfig.getEffectiveRuntime(finalConfig);
+        String runtimeType = (runtimeConfig != null && runtimeConfig.type != null && !runtimeConfig.type.trim().isEmpty())
+                ? runtimeConfig.type.trim()
+                : "lucee-express";
+        String normalizedRuntimeType = runtimeType.toLowerCase(java.util.Locale.ROOT);
+
+        LuceeServerConfig.validateLuceeVersionSupportForRuntime(finalConfig, runtimeType);
+        String luceeVersion = LuceeServerConfig.getLuceeVersion(finalConfig);
+
+        StringBuilder result = new StringBuilder();
+        result.append("🔥 Prewarming runtime artifacts (no server start)...\n");
+        result.append("   Project:       ").append(projectDir).append("\n");
+        result.append("   Runtime:       ").append(runtimeType).append("\n");
+        result.append("   Lucee Version: ").append(luceeVersion).append("\n");
+
+        if ("tomcat".equals(normalizedRuntimeType) || "jetty".equals(normalizedRuntimeType)) {
+            String variant = LuceeServerConfig.getLuceeVariant(finalConfig);
+            Path jarPath = serverManager.ensureLuceeJar(luceeVersion, variant);
+            result.append("   Lucee Variant: ").append(variant).append("\n");
+            result.append("   Cached JAR:    ").append(jarPath).append("\n");
+        } else if ("docker".equals(normalizedRuntimeType)) {
+            result.append("   Runtime Cache: Docker runtime uses container images; no Lucee Express/JAR download needed.\n");
+        } else {
+            if (!"lucee-express".equals(normalizedRuntimeType)) {
+                result.append("   Note:          Unknown runtime type; using lucee-express artifact cache.\n");
+            }
+            Path expressPath = serverManager.ensureLuceeExpress(luceeVersion);
+            result.append("   Express Path:  ").append(expressPath).append("\n");
+        }
+
+        result.append("✅ Runtime prewarm complete. No server was started.\n");
+        return formatOutput(result.toString(), false);
     }
     
     /**

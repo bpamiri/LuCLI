@@ -181,6 +181,9 @@ public class ServerCommand implements Callable<Integer> {
         @Option(names = {"--warmup"},
                 description = "Enable Lucee warmup for this start (sets LUCEE_ENABLE_WARMUP=true and -Dlucee.enable.warmup=true)")
         private boolean warmup = false;
+        @Option(names = {"--prewarm"},
+                description = "Pre-download runtime artifacts (Lucee Express/JAR) and exit without starting the server")
+        private boolean prewarm = false;
 
         @Option(names = {"--webroot"},
                 description = "Override webroot (relative to project directory, like lucee.json)")
@@ -342,6 +345,9 @@ public class ServerCommand implements Callable<Integer> {
             if (warmup) {
                 args.add("--warmup");
             }
+            if (prewarm) {
+                args.add("--prewarm");
+            }
 
             if (sandbox) {
                 args.add("--sandbox");
@@ -418,6 +424,9 @@ public class ServerCommand implements Callable<Integer> {
         @Option(names = {"--warmup"},
                 description = "Enable Lucee warmup for this run (sets LUCEE_ENABLE_WARMUP=true and -Dlucee.enable.warmup=true)")
         private boolean warmup = false;
+        @Option(names = {"--prewarm"},
+                description = "Pre-download runtime artifacts (Lucee Express/JAR) and exit without starting the server")
+        private boolean prewarm = false;
 
         @Option(names = {"--no-agents"},
                 description = "Disable all Java agents")
@@ -516,6 +525,9 @@ public class ServerCommand implements Callable<Integer> {
             }
             if (warmup) {
                 args.add("--warmup");
+            }
+            if (prewarm) {
+                args.add("--prewarm");
             }
             if (sandbox) {
                 args.add("--sandbox");

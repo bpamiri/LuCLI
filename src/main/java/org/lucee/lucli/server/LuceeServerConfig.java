@@ -2446,6 +2446,7 @@ public class LuceeServerConfig {
         }
 
         objectMapper.writeValue(cfConfigPath.toFile(), finalConfig);
+        System.out.println("Generated lucee config in: " + cfConfigPath);
 
         // Cleanup legacy nested location when present to avoid diverging CFConfig state.
         Path legacyCfConfigPath = resolveLegacyCfConfigPath(config, serverInstanceDir);
