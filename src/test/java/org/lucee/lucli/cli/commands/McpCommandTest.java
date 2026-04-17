@@ -111,6 +111,41 @@ class McpCommandTest {
                 "expected captured output in response, got: '" + text + "'");
     }
 
+    @Test
+    void toolsListExcludesBaseModuleInternals() throws Exception {
+        List<JsonNode> responses = runMcpSession(List.of(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}",
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}"
+        ));
+
+        JsonNode listResp = responses.stream()
+                .filter(n -> n.has("id") && n.get("id").asInt() == 2)
+                .findFirst()
+                .orElseThrow();
+
+        // Lucee lowercases function names in metadata — compare lowercase
+        List<String> names = new ArrayList<>();
+        listResp.get("result").get("tools").forEach(
+                t -> names.add(t.get("name").asText().toLowerCase()));
+
+        // BaseModule helpers must NOT leak into the tool list
+        List<String> forbidden = List.of(
+                "init", "out", "err", "getenv", "verbose",
+                "getsecret", "getabsolutepath", "executecommand",
+                "version", "showhelp", "mcphiddentools"
+        );
+        for (String banned : forbidden) {
+            assertFalse(names.contains(banned),
+                    "tool '" + banned + "' must be hidden from MCP. Got: " + names);
+        }
+
+        // Fixture tools must remain
+        assertTrue(names.contains("echo"), "expected echo. Got: " + names);
+        assertTrue(names.contains("boom"), "expected boom. Got: " + names);
+        assertTrue(names.contains("greet"), "expected greet. Got: " + names);
+    }
+
     // Send the given JSON-RPC lines to `dev-lucli.sh mcp mcpfixture` as a
     // subprocess. Returns each parsed response as a JsonNode.
     private List<JsonNode> runMcpSession(List<String> requests) throws Exception {

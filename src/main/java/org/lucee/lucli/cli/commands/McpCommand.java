@@ -66,6 +66,20 @@ public class McpCommand implements Callable<Integer> {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
+    /**
+     * Public functions inherited from BaseModule (or framework conventions
+     * like mcpHiddenTools) that are never exposed as MCP tools. Mirrors the
+     * exclusion used by BaseModule.cfc's showHelp(). Compared lowercase
+     * because Lucee normalizes function names to lowercase in metadata.
+     */
+    private static final java.util.Set<String> BASE_MODULE_INTERNALS =
+            java.util.Set.of(
+                    "init", "out", "err", "getenv", "verbose",
+                    "getsecret", "getabsolutepath", "executecommand",
+                    "version", "showhelp",
+                    "mcphiddentools"
+            );
+
     private boolean initialized = false;
     private String negotiatedProtocolVersion = null;
 
@@ -274,6 +288,11 @@ public class McpCommand implements Callable<Integer> {
 
             String name = getString(fn, "name");
             if (name == null || name.isBlank()) {
+                continue;
+            }
+
+            // Skip BaseModule internals and framework convention functions
+            if (BASE_MODULE_INTERNALS.contains(name.toLowerCase())) {
                 continue;
             }
 
