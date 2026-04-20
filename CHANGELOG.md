@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **Fix: `cfml` Command Exits Non-Zero on Failure:** `lucli cfml '<expr>'` now exits with code 1 when the expression throws. Previously, the catch block logged the error and fell through to `return result` with `result == null`, which picocli maps to exit 0. Callers checking exit codes (shell pipelines, CI jobs, pre-commit hooks, doctest harnesses) now correctly see failure.
 - **CI Test Result Publishing Permissions:** Updated GitHub Actions test jobs to grant `pull-requests: write` and `issues: write` so `EnricoMi/publish-unit-test-result-action` can post PR comments without failing Linux unit/integration jobs with `403 Resource not accessible by integration`.
 - **Server Runtime Prewarm Flag (`--prewarm`):** Added `--prewarm` support to both `lucli server start` and `lucli server run` to pre-download runtime artifacts and exit without starting a server. LuCLI now prewarms Lucee Express for `lucee-express` runtime, prewarms Lucee JARs for `tomcat`/`jetty` runtimes, and reports a no-download message for `docker` runtime.
 - **Server Header Shows Generated Lucee Config Path:** When server startup writes `.CFConfig.json`, LuCLI now prints `Generated lucee config in: <path>` alongside existing startup header lines so the effective Lucee config file location is explicit.
