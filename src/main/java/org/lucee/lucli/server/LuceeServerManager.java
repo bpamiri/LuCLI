@@ -2102,6 +2102,12 @@ public class LuceeServerManager {
             throw new Exception("Tomcat script not found: " + scriptPath);
         }
 
+        // Preflight: catalina.sh/startup.sh require JAVA_HOME (or JRE_HOME).
+        // Fail fast with an actionable message before spawning the child JVM;
+        // otherwise the child exits silently and the caller sees a misleading
+        // "port conflicts detected" error on subsequent start attempts.
+        JavaRuntimeCheck.verifyOrExit();
+
         // Create logs dir before redirecting output
         Path logsDir = catalinaBase.resolve("logs");
         Files.createDirectories(logsDir);
