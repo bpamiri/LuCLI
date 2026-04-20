@@ -3,6 +3,7 @@ package org.lucee.lucli.server;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
 
 /**
  * Preflight check for the Java runtime used by the child server process.
@@ -28,19 +29,31 @@ public final class JavaRuntimeCheck {
     private JavaRuntimeCheck() { /* static helper */ }
 
     /**
-     * Verify that a Java runtime is reachable for the child server process.
-     * Prints an actionable error and terminates the JVM with exit code 1 on
-     * failure. Returns normally when the runtime is reachable.
+     * Verify that a Java runtime is reachable for the child server process,
+     * using the effective environment the child will see (parent shell +
+     * {@code .env} file + {@code lucee.json} {@code envVars}). Prints an
+     * actionable error and terminates the JVM with exit code 1 on failure.
+     * Returns normally when the runtime is reachable.
+     *
+     * <p>Callers must pass the populated {@link ProcessBuilder#environment()}
+     * map — not {@link System#getenv()} — so project-level overrides of
+     * {@code JAVA_HOME}/{@code JRE_HOME} are honored.
      */
-    public static void verifyOrExit() {
-        String error = findJavaRuntimeError(
-                System.getenv("JAVA_HOME"),
-                System.getenv("JRE_HOME"),
-                System.getProperty("os.name", ""));
+    public static void verifyOrExit(Map<String, String> childEnv) {
+        String error = findJavaRuntimeErrorInMap(childEnv, System.getProperty("os.name", ""));
         if (error != null) {
             System.err.println(error);
             System.exit(1);
         }
+    }
+
+    /**
+     * Map-based variant of {@link #findJavaRuntimeError}. Exposed for testing.
+     */
+    public static String findJavaRuntimeErrorInMap(Map<String, String> env, String osName) {
+        String javaHome = env != null ? env.get("JAVA_HOME") : null;
+        String jreHome = env != null ? env.get("JRE_HOME") : null;
+        return findJavaRuntimeError(javaHome, jreHome, osName);
     }
 
     /**

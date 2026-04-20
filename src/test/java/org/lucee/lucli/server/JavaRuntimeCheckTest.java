@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
@@ -122,6 +124,28 @@ class JavaRuntimeCheckTest {
         String err = JavaRuntimeCheck.findJavaRuntimeError(
                 "/broken/jdk", tmp.toString(), LINUX);
         assertNull(err, "Valid JRE_HOME should rescue a broken JAVA_HOME");
+    }
+
+    @Test
+    void findJavaRuntimeErrorInMapResolvesFromChildEnv(@TempDir Path tmp) throws IOException {
+        // Regression for Cursor Bugbot finding on PR #56:
+        // JAVA_HOME may be absent from the parent shell but present in the
+        // effective child-process env (built from .env + lucee.json envVars).
+        // The map-based preflight must honor that source so we don't
+        // false-positive and block a startup that would otherwise succeed.
+        Path bin = Files.createDirectories(tmp.resolve("bin"));
+        Files.createFile(bin.resolve("java"));
+
+        Map<String, String> childEnv = new HashMap<>();
+        childEnv.put("JAVA_HOME", tmp.toString());
+
+        assertNull(JavaRuntimeCheck.findJavaRuntimeErrorInMap(childEnv, LINUX),
+                "JAVA_HOME from env map should satisfy the preflight");
+    }
+
+    @Test
+    void findJavaRuntimeErrorInMapReportsMissingWhenMapHasNothing() {
+        assertNotNull(JavaRuntimeCheck.findJavaRuntimeErrorInMap(new HashMap<>(), LINUX));
     }
 
     @Test
