@@ -1,0 +1,5 @@
+{
+    "name": "typedbind",
+    "version": "0.0.1",
+    "description": "Test fixture for positional-to-typed parameter binding"
+}
