@@ -126,6 +126,51 @@ public class DependencyInstallerTest {
         assertFalse(installer.supports(dep));
     }
 
+    @Test
+    void extensionInstaller_pathDependency_materializesIntoInstallPathByDefault() throws Exception {
+        ExtensionDependencyInstaller installer = new ExtensionDependencyInstaller(projectDir);
+        Path sourceFile = projectDir.resolve("source").resolve("my-ext.lex");
+        Files.createDirectories(sourceFile.getParent());
+        Files.writeString(sourceFile, "extension-bytes");
+
+        DependencyConfig dep = new DependencyConfig();
+        dep.setName("my-ext");
+        dep.setType("extension");
+        dep.setPath("source/my-ext.lex");
+        dep.setInstallPath("extensions/my-ext.lex");
+
+        LockedDependency locked = installer.install(dep);
+
+        Path installedFile = projectDir.resolve("extensions").resolve("my-ext.lex");
+        assertTrue(Files.exists(installedFile));
+        assertEquals("extension-bytes", Files.readString(installedFile));
+        assertEquals("path:" + installedFile.toAbsolutePath(), locked.getSource());
+        assertEquals(installedFile.toAbsolutePath().toString(), locked.getInstallPath());
+        assertEquals("file:" + sourceFile.toAbsolutePath(), locked.getResolved());
+    }
+
+    @Test
+    void extensionInstaller_pathDependency_canSkipMaterializationWhenDisabled() throws Exception {
+        ExtensionDependencyInstaller installer = new ExtensionDependencyInstaller(projectDir, false);
+        Path sourceFile = projectDir.resolve("source").resolve("my-ext.lex");
+        Files.createDirectories(sourceFile.getParent());
+        Files.writeString(sourceFile, "extension-bytes");
+
+        DependencyConfig dep = new DependencyConfig();
+        dep.setName("my-ext");
+        dep.setType("extension");
+        dep.setPath("source/my-ext.lex");
+        dep.setInstallPath("extensions/my-ext.lex");
+
+        LockedDependency locked = installer.install(dep);
+
+        Path expectedInstallPath = projectDir.resolve("extensions").resolve("my-ext.lex");
+        assertFalse(Files.exists(expectedInstallPath));
+        assertEquals("path:" + sourceFile.toAbsolutePath(), locked.getSource());
+        assertEquals(sourceFile.toAbsolutePath().toString(), locked.getInstallPath());
+        assertEquals("file:" + sourceFile.toAbsolutePath(), locked.getResolved());
+    }
+
     // ===================
     // LockedDependency Tests
     // ===================

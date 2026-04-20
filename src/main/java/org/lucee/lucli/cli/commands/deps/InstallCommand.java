@@ -126,6 +126,7 @@ public class InstallCommand implements Callable<Integer> {
             installDev = config.getPackages().getInstallDevDependencies();
         }
         boolean useLockFile = config.getDependencySettings().isUseLockFileEnabled();
+        boolean materializeExtensionsOnInstall = config.getDependencySettings().isMaterializeExtensionsOnInstallEnabled();
         
         List<DependencyConfig> devDeps = installDev ? config.parseDevDependencies() : List.of();
         
@@ -241,7 +242,7 @@ public class InstallCommand implements Callable<Integer> {
         
         StringOutput.Quick.info(" Installing dependencies...");
         GitDependencyInstaller gitInstaller = new GitDependencyInstaller(projectDir);
-        ExtensionDependencyInstaller extInstaller = new ExtensionDependencyInstaller(projectDir);
+        ExtensionDependencyInstaller extInstaller = new ExtensionDependencyInstaller(projectDir, materializeExtensionsOnInstall);
         ForgeBoxDependencyInstaller forgeInstaller = new ForgeBoxDependencyInstaller(projectDir);
         
         java.util.Map<String, LockedDependency> installedProd = new java.util.LinkedHashMap<>();
@@ -266,7 +267,7 @@ public class InstallCommand implements Callable<Integer> {
                         : existingLockFile.getDependencies().get(dep.getName());
                     
                     boolean needsInstall = force || existing == null || 
-                        !matchesRequested(dep, existing);
+                        !matchesRequested(dep, existing, projectDir);
                     
                     LockedDependency effectiveLocked = null;
 
@@ -395,7 +396,7 @@ public class InstallCommand implements Callable<Integer> {
                     ? existingLockFile.getDevDependencies().get(dep.getName())
                     : existingLockFile.getDependencies().get(dep.getName());
 
-                boolean needsInstall = force || existing == null || !matchesRequested(dep, existing);
+                boolean needsInstall = force || existing == null || !matchesRequested(dep, existing, projectDir);
 
                 LockedDependency effectiveLocked;
                 if (!needsInstall && installPathExists(projectDir, existing.getInstallPath())) {
@@ -489,7 +490,7 @@ public class InstallCommand implements Callable<Integer> {
     /**
      * Check if requested dependency matches the locked version
      */
-    private boolean matchesRequested(DependencyConfig requested, LockedDependency locked) {
+    private boolean matchesRequested(DependencyConfig requested, LockedDependency locked, Path projectDir) {
         // For git sources, compare ref/version
         if (isGitDependency(requested)) {
             return requested.getRef().equals(locked.getVersion());
@@ -498,9 +499,27 @@ public class InstallCommand implements Callable<Integer> {
         if (isExtensionDependency(requested)) {
             boolean idMatches = (requested.getId() == null && locked.getId() == null) ||
                                (requested.getId() != null && requested.getId().equals(locked.getId()));
-            boolean sourceMatches = (requested.getUrl() == null && requested.getPath() == null && locked.getSource() != null && locked.getSource().equals("extension-provider")) ||
-                                   (requested.getUrl() != null && requested.getUrl().equals(locked.getSource())) ||
-                                   (requested.getPath() != null && ("path:" + requested.getPath()).equals(locked.getSource()));
+            boolean sourceMatches;
+
+            if (requested.getUrl() != null && !requested.getUrl().isBlank()) {
+                String requestedUrl = requested.getUrl();
+                sourceMatches = requestedUrl.equals(locked.getResolved()) || requestedUrl.equals(locked.getSource());
+            } else if (requested.getPath() != null && !requested.getPath().isBlank()) {
+                String requestedPath = requested.getPath().trim();
+                Path requestedPathObj = Paths.get(requestedPath);
+                Path resolvedRequestedPath = requestedPathObj.isAbsolute()
+                    ? requestedPathObj
+                    : projectDir.resolve(requestedPathObj).normalize();
+                String absRequestedPath = resolvedRequestedPath.toAbsolutePath().toString();
+
+                sourceMatches =
+                    ("path:" + requestedPath).equals(locked.getSource()) ||
+                    ("path:" + absRequestedPath).equals(locked.getSource()) ||
+                    ("file:" + requestedPath).equals(locked.getResolved()) ||
+                    ("file:" + absRequestedPath).equals(locked.getResolved());
+            } else {
+                sourceMatches = "extension-provider".equals(locked.getSource());
+            }
             return idMatches && sourceMatches;
         }
         // For ForgeBox dependencies, compare version (and source)
@@ -541,8 +560,16 @@ public class InstallCommand implements Callable<Integer> {
             String requestedPath = requested.getPath() != null ? requested.getPath().trim() : null;
             String lockedResolved = locked.getResolved();
             String lockedInstallPath = locked.getInstallPath();
-
-            boolean pathMatches = requestedPath != null && lockedResolved != null && lockedResolved.equals("file:" + requestedPath);
+            boolean pathMatches = false;
+            if (requestedPath != null && lockedResolved != null) {
+                Path requestedPathObj = Paths.get(requestedPath);
+                Path resolvedRequestedPath = requestedPathObj.isAbsolute()
+                    ? requestedPathObj
+                    : projectDir.resolve(requestedPathObj).normalize();
+                String absRequestedPath = resolvedRequestedPath.toAbsolutePath().toString();
+                pathMatches = lockedResolved.equals("file:" + requestedPath) ||
+                             lockedResolved.equals("file:" + absRequestedPath);
+            }
             boolean installPathMatches = requested.getInstallPath() != null && requested.getInstallPath().equals(lockedInstallPath);
             return pathMatches && installPathMatches;
         }
@@ -571,7 +598,7 @@ public class InstallCommand implements Callable<Integer> {
     private boolean installPathExists(Path projectDir, String installPath) {
         if (installPath == null) return false;
         File path = projectDir.resolve(installPath).toFile();
-        return path.exists() && path.isDirectory();
+        return path.exists();
     }
 
     /**

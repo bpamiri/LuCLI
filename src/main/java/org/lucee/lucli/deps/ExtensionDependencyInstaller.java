@@ -15,13 +15,13 @@ import java.nio.file.StandardCopyOption;
 /**
  * Installer for Lucee extension (.lex) dependencies.
  * 
- * During install phase: Records extension metadata in lock file
- * During server start: Deploys .lex files to lucee-server/deploy folder
+ * During install phase: Records extension metadata in lock file.
+ * During server start: Deploys .lex files to lucee-server/deploy folder.
  * 
  * Handles three scenarios:
  * 1. Extension with only ID/slug - recorded for LUCEE_EXTENSIONS env var
- * 2. Extension with URL - downloaded to a cache folder at install time
- * 3. Extension with path - path recorded (validated) and copied at server start
+ * 2. Extension with URL - downloaded at install time
+ * 3. Extension with path - validated and installed from local file
  * 
  * More information on ways to install extensions with lucee can be found here:
  * https://docs.lucee.org/recipes/extension-installation.html
@@ -30,9 +30,15 @@ public class ExtensionDependencyInstaller implements DependencyInstaller {
     
     private final Path projectDir;
     private final Path cacheDir;
+    private final boolean materializeExtensionsOnInstall;
 
     public ExtensionDependencyInstaller(Path projectDir) {
+        this(projectDir, true);
+    }
+
+    public ExtensionDependencyInstaller(Path projectDir, boolean materializeExtensionsOnInstall) {
         this.projectDir = projectDir != null ? projectDir : Paths.get(".");
+        this.materializeExtensionsOnInstall = materializeExtensionsOnInstall;
 
         String lucliHome = System.getProperty("lucli.home");
         if (lucliHome == null) {
@@ -55,8 +61,8 @@ public class ExtensionDependencyInstaller implements DependencyInstaller {
         locked.setType("extension");
         locked.setVersion(dep.getVersion() != null ? dep.getVersion() : "unknown");
         
-        // 1) Path-based extension: validate and record absolute path. Lucee will
-        //    install it from the server's deploy directory on startup.
+        // 1) Path-based extension: validate source and either materialize into
+        //    installPath (default) or record source path directly (opt-out).
         if (dep.getPath() != null && !dep.getPath().trim().isEmpty()) {
             String configured = dep.getPath().trim();
             Path configuredPath = Path.of(configured);
@@ -71,18 +77,42 @@ public class ExtensionDependencyInstaller implements DependencyInstaller {
                 throw new IOException("Extension path is not a file: " + resolvedPath);
             }
 
-            String absPath = resolvedPath.toAbsolutePath().toString();
-            locked.setSource("path:" + absPath);
-            locked.setInstallPath(absPath);
-            System.out.println("  " + dep.getName() + " - recorded (extension from path: " + absPath + ")");
+            String sourceAbsPath = resolvedPath.toAbsolutePath().toString();
+            locked.setResolved("file:" + sourceAbsPath);
+
+            if (!materializeExtensionsOnInstall) {
+                locked.setSource("path:" + sourceAbsPath);
+                locked.setInstallPath(sourceAbsPath);
+                System.out.println("  " + dep.getName() + " - recorded (extension from path: " + sourceAbsPath + ")");
+                return locked;
+            }
+
+            Path targetPath = resolveInstallTarget(dep, resolvedPath.getFileName().toString());
+            copyFileIfNeeded(resolvedPath, targetPath);
+
+            String installedAbsPath = targetPath.toAbsolutePath().toString();
+            locked.setSource("path:" + installedAbsPath);
+            locked.setInstallPath(installedAbsPath);
+            System.out.println("  " + dep.getName() + " - installed extension from path to " + installedAbsPath);
             return locked;
         }
 
-        // 2) URL-based extension: download to cache folder at install time and
-        //    record cached path so server start only needs to copy to deploy/.
+        // 2) URL-based extension: download either into installPath (default)
+        //    or shared cache (opt-out).
         if (dep.getUrl() != null && !dep.getUrl().trim().isEmpty()) {
             String urlString = dep.getUrl().trim();
-            String absPath = downloadExtensionToCache(urlString);
+            locked.setResolved(urlString);
+
+            String absPath;
+            if (materializeExtensionsOnInstall) {
+                String fallbackFilename = extractFilenameFromUrl(urlString);
+                Path targetPath = resolveInstallTarget(dep, fallbackFilename);
+                downloadExtensionToPath(urlString, targetPath);
+                absPath = targetPath.toAbsolutePath().toString();
+            } else {
+                absPath = downloadExtensionToCache(urlString);
+            }
+
             locked.setSource("path:" + absPath);
             locked.setInstallPath(absPath);
             System.out.println("  " + dep.getName() + " - downloaded extension to " + absPath);
@@ -261,6 +291,50 @@ public class ExtensionDependencyInstaller implements DependencyInstaller {
     }
 
     /**
+     * Resolve where extension artifacts should be materialized for deps install.
+     */
+    private Path resolveInstallTarget(DependencyConfig dep, String fallbackFilename) throws IOException {
+        String install = dep.getInstallPath();
+        if (install == null || install.trim().isEmpty()) {
+            install = "extensions/" + fallbackFilename;
+        }
+
+        Path configuredInstall = Path.of(install.trim());
+        Path targetPath = configuredInstall.isAbsolute()
+            ? configuredInstall
+            : projectDir.resolve(configuredInstall).normalize();
+
+        boolean looksLikeDirectory = install.endsWith("/") || install.endsWith("\\");
+        if (looksLikeDirectory || (Files.exists(targetPath) && Files.isDirectory(targetPath))) {
+            targetPath = targetPath.resolve(fallbackFilename);
+        }
+
+        Path parent = targetPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        return targetPath;
+    }
+
+    /**
+     * Copy source extension file to target path if needed.
+     */
+    private void copyFileIfNeeded(Path sourcePath, Path targetPath) throws IOException {
+        Path normalizedSource = sourcePath.toAbsolutePath().normalize();
+        Path normalizedTarget = targetPath.toAbsolutePath().normalize();
+
+        if (normalizedSource.equals(normalizedTarget)) {
+            return;
+        }
+
+        Path parent = normalizedTarget.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Files.copy(normalizedSource, normalizedTarget, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    /**
      * Download an extension .lex file into the shared cache directory and
      * return the absolute path to the cached file. If the file already
      * exists, it is reused without re-downloading.
@@ -273,6 +347,21 @@ public class ExtensionDependencyInstaller implements DependencyInstaller {
 
         if (Files.exists(targetFile)) {
             return targetFile.toAbsolutePath().toString();
+        }
+        downloadExtensionToPath(urlString, targetFile);
+        return targetFile.toAbsolutePath().toString();
+    }
+
+    /**
+     * Download an extension .lex file into the provided target path.
+     */
+    private void downloadExtensionToPath(String urlString, Path targetFile) throws Exception {
+        Path parent = targetFile.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        if (Files.exists(targetFile)) {
+            return;
         }
 
         URL url = new URL(urlString);
@@ -298,8 +387,6 @@ public class ExtensionDependencyInstaller implements DependencyInstaller {
                     out.write(buffer, 0, bytesRead);
                 }
             }
-
-            return targetFile.toAbsolutePath().toString();
         } finally {
             if (connection != null) {
                 connection.disconnect();

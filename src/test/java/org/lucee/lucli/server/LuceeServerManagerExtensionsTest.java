@@ -1,0 +1,59 @@
+package org.lucee.lucli.server;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class LuceeServerManagerExtensionsTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void buildLuceeExtensions_usesProviderExtensionsFromLuceeJsonWhenLockfileDisabled() throws Exception {
+        Files.writeString(tempDir.resolve("lucee.json"), """
+            {
+              "name": "ext-env-preview",
+              "dependencySettings": {
+                "useLockFile": false
+              },
+              "dependencies": {
+                "h2": {
+                  "type": "extension",
+                  "id": "465E1E35-2425-4F4E-8B3FAB638BD7280A"
+                }
+              }
+            }
+            """);
+
+
+        String luceeExtensions = LuceeServerManager.buildLuceeExtensions(tempDir);
+        assertEquals("465E1E35-2425-4F4E-8B3FAB638BD7280A", luceeExtensions,
+                "LUCEE_EXTENSIONS should include provider extension ID from lucee.json when lockfile is disabled");
+    }
+
+    @Test
+    void buildLuceeExtensions_returnsEmptyWhenNoProviderExtensionsDeclared() throws Exception {
+        Files.writeString(tempDir.resolve("lucee.json"), """
+            {
+              "name": "no-extensions",
+              "dependencySettings": {
+                "useLockFile": false
+              },
+              "dependencies": {
+                "framework-one": {
+                  "type": "cfml",
+                  "url": "https://github.com/example/framework-one.git"
+                }
+              }
+            }
+            """);
+
+        String luceeExtensions = LuceeServerManager.buildLuceeExtensions(tempDir);
+
+        assertEquals("", luceeExtensions);
+    }
+}

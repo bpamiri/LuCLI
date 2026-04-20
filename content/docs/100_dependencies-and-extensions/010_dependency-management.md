@@ -109,8 +109,9 @@ Behaviour:
 - Installs supported dependency types:
   - `source: "git"` – CFML libraries installed from Git repositories.
   - `type: "extension"` – Lucee extensions installed via providers, URLs, or local `.lex` files.
+- For extension dependencies with `url` or `path`, LuCLI materializes the extension file during install (downloads/copies into the dependency `installPath`) by default. Set `dependencySettings.materializeExtensionsOnInstall: false` to use metadata-only/cache-based behavior instead.
 - When `dependencySettings.useLockFile` is `true`, writes a normalized record for each dependency into `lucee-lock.json` (including version, source, install path, and, for extensions, their Lucee ID).
-- Prints the `LUCEE_EXTENSIONS` value that will be set when the server starts, built from all locked extension dependencies.
+- Prints the `LUCEE_EXTENSIONS` value that will be set when the server starts. When lock files are enabled, this comes from `lucee-lock.json`; otherwise LuCLI derives extension activation data directly from `lucee.json`.
 
 ### Dependency `mapping` → Lucee mapping behavior
 
@@ -178,18 +179,21 @@ Environment handling for nested projects:
 
 ### How extensions are activated at server startup
 
-When you start a server (with lock files enabled), LuCLI:
+When you start a server, LuCLI resolves extension dependencies from one of two sources:
 
-1. Reads `lucee-lock.json` for the project.
-2. Collects all locked dependencies with `type: "extension"`.
-3. Builds a comma-separated `LUCEE_EXTENSIONS` string from those locked entries.
-4. Injects `LUCEE_EXTENSIONS` into the server process environment (along with any other `envVars`).
-5. Lucee reads `LUCEE_EXTENSIONS` at startup and installs/activates the listed extensions.
+1. If `dependencySettings.useLockFile` is `true` and extension entries exist in `lucee-lock.json`, LuCLI uses those locked entries.
+2. Otherwise, LuCLI falls back to extension declarations in `lucee.json` (`dependencies`/`devDependencies`) and resolves provider IDs / local installed `.lex` paths directly.
+
+Then LuCLI:
+
+1. Builds `LUCEE_EXTENSIONS` from provider-based extension entries.
+2. Injects `LUCEE_EXTENSIONS` into the server process environment (along with any other `envVars`).
+3. Deploys path/url-based `.lex` files into the server `lucee-server/deploy/` directory.
 
 This means:
 
-- The **set of active extensions is driven by `lucee-lock.json`** when lock files are enabled, not by `lucee.json` alone.
-- Running `lucli deps install` is the canonical way to update which extensions are installed and locked for a project when `dependencySettings.useLockFile` is enabled.
+- You can run `lucli deps install` and start the server **without requiring `useLockFile`**.
+- Lock files remain supported for deterministic/pinned dependency metadata when desired.
 - Server lock (`lucee-lock.json` → `serverLocks`) coexists with dependency locking; updating dependencies and updating server locks are separate, explicit steps.
 
 For more about dependency structure, see `LuceeJsonConfig` and `DependencySettingsConfig` in the codebase, and for lock format see `LuceeLockFile`.
