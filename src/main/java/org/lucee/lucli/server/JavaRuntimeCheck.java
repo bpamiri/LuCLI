@@ -20,7 +20,10 @@ import java.util.Map;
  *
  * <p>Note: the LuCLI parent process itself may be running from an embedded JRE,
  * so {@link System#getProperty(String) java.home} is not a reliable signal for
- * what the child process will see. We check environment variables directly.
+ * what the child process will see. We check the effective child-process
+ * environment (the populated {@link ProcessBuilder#environment()} map, which
+ * merges parent shell + {@code .env} + {@code lucee.json} {@code envVars}),
+ * not {@link System#getenv()}, so project-level overrides are honored.
  */
 public final class JavaRuntimeCheck {
 

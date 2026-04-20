@@ -128,11 +128,11 @@ class JavaRuntimeCheckTest {
 
     @Test
     void findJavaRuntimeErrorInMapResolvesFromChildEnv(@TempDir Path tmp) throws IOException {
-        // Regression for Cursor Bugbot finding on PR #56:
-        // JAVA_HOME may be absent from the parent shell but present in the
-        // effective child-process env (built from .env + lucee.json envVars).
-        // The map-based preflight must honor that source so we don't
-        // false-positive and block a startup that would otherwise succeed.
+        // Regression: JAVA_HOME may be absent from the parent shell but
+        // present in the effective child-process env (built from .env +
+        // lucee.json envVars). The map-based preflight must honor that
+        // source so we don't false-positive and block a startup that
+        // would otherwise succeed.
         Path bin = Files.createDirectories(tmp.resolve("bin"));
         Files.createFile(bin.resolve("java"));
 
