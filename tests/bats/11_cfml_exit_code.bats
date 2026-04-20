@@ -15,7 +15,9 @@ teardown() {
 }
 
 @test "cfml command exits 0 when expression succeeds" {
-    run_lucli cfml '1 + 2'
+    # Bare expression result is returned, not auto-printed; use writeOutput
+    # to exercise the success path end-to-end.
+    run_lucli cfml 'writeOutput(1 + 2)'
     assert_success
     assert_output_contains "3"
 }
