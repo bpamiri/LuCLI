@@ -481,6 +481,11 @@
         "installDevDependencies": {
           "type": ["boolean", "null"],
           "description": "Override whether devDependencies should be installed for a given environment. When null, defaults to true except when --production is used."
+        },
+        "materializeExtensionsOnInstall": {
+          "type": "boolean",
+          "description": "When true (default), extension dependencies with url/path are downloaded or copied into installPath during 'lucli deps install'. When false, LuCLI records extension metadata and uses shared cache/path references instead.",
+          "default": true
         }
       }
     },

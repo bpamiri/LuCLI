@@ -68,5 +68,28 @@ if (structKeyExists(moduleComponent, "init")) {
     modules = moduleComponent;
 }
 
+// Auto-bind positional args (arg1, arg2, ...) to the target function's
+// declared typed parameters by declaration order. This lets module authors
+// declare typed signatures (enabling rich MCP schemas via auto-discovery)
+// while still accepting CLI positional invocation. Named args and already-set
+// typed params are preserved — positional binding only fills gaps. Excess
+// positional args beyond the function's declared param count are left in
+// argCollection for modules that want variadic access.
+if (structKeyExists(componentMeta, "functions")) {
+    for (fn in componentMeta.functions) {
+        if (lcase(fn.name) == lcase(subcommand) && structKeyExists(fn, "parameters")) {
+            for (i = 1; i <= arrayLen(fn.parameters); i++) {
+                paramName = fn.parameters[i].name;
+                argKey = "arg" & i;
+                if (!structKeyExists(argCollection, paramName)
+                    && structKeyExists(argCollection, argKey)) {
+                    argCollection[paramName] = argCollection[argKey];
+                }
+            }
+            break;
+        }
+    }
+}
+
 results = modules[subcommand](argumentCollection=argCollection);
 Timer.stop("Execute Module Script");

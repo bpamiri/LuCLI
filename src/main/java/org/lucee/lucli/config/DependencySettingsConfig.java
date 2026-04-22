@@ -34,6 +34,14 @@ public class DependencySettingsConfig {
     
     @JsonProperty("installDevDependencies")
     private Boolean installDevDependencies;
+
+    /**
+     * Controls whether extension dependencies with url/path sources are
+     * materialized as concrete files during `lucli deps install`.
+     * Defaults to enabled.
+     */
+    @JsonProperty("materializeExtensionsOnInstall")
+    private Boolean materializeExtensionsOnInstall;
     
     // Constructors
     public DependencySettingsConfig() {
@@ -99,5 +107,17 @@ public class DependencySettingsConfig {
     
     public void setInstallDevDependencies(Boolean installDevDependencies) {
         this.installDevDependencies = installDevDependencies;
+    }
+
+    public Boolean getMaterializeExtensionsOnInstall() {
+        return materializeExtensionsOnInstall;
+    }
+
+    public void setMaterializeExtensionsOnInstall(Boolean materializeExtensionsOnInstall) {
+        this.materializeExtensionsOnInstall = materializeExtensionsOnInstall;
+    }
+
+    public boolean isMaterializeExtensionsOnInstallEnabled() {
+        return !Boolean.FALSE.equals(materializeExtensionsOnInstall);
     }
 }

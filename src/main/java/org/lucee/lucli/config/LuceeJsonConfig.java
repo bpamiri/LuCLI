@@ -145,6 +145,9 @@ public class LuceeJsonConfig {
         if (map.containsKey("repository")) {
             dep.setRepository((String) map.get("repository"));
         }
+        if (map.containsKey("id")) {
+            dep.setId((String) map.get("id"));
+        }
     }
     
     /**
@@ -188,6 +191,9 @@ public class LuceeJsonConfig {
         }
         if (envSettings.getUseLockFile() != null) {
             base.setUseLockFile(envSettings.getUseLockFile());
+        }
+        if (envSettings.getMaterializeExtensionsOnInstall() != null) {
+            base.setMaterializeExtensionsOnInstall(envSettings.getMaterializeExtensionsOnInstall());
         }
         // Add other settings as needed
     }

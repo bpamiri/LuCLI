@@ -1855,9 +1855,7 @@ public class LuceeServerManager {
             if (settings == null || !settings.isAutoInstallOnServerStart()) {
                 return; // Feature disabled
             }
-            if (!settings.isUseLockFileEnabled()) {
-                return; // Lock file flow disabled by dependency settings
-            }
+            boolean useLockFile = settings.isUseLockFileEnabled();
 
             java.util.List<org.lucee.lucli.config.DependencyConfig> prodDeps = depConfig.parseDependencies();
             java.util.List<org.lucee.lucli.config.DependencyConfig> devDeps = java.util.List.of();
@@ -1873,15 +1871,19 @@ public class LuceeServerManager {
             }
 
             // Read existing lock file so we can preserve non-extension entries
-            org.lucee.lucli.config.LuceeLockFile existingLock =
-                    org.lucee.lucli.config.LuceeLockFile.read(projectDir);
+            // when lock files are enabled.
+            org.lucee.lucli.config.LuceeLockFile existingLock = useLockFile
+                    ? org.lucee.lucli.config.LuceeLockFile.read(projectDir)
+                    : new org.lucee.lucli.config.LuceeLockFile();
 
             java.util.Map<String, org.lucee.lucli.deps.LockedDependency> newProd =
                     new java.util.LinkedHashMap<>(existingLock.getDependencies());
             java.util.Map<String, org.lucee.lucli.deps.LockedDependency> newDev =
                     new java.util.LinkedHashMap<>(existingLock.getDevDependencies());
 
-            ExtensionDependencyInstaller extInstaller = new ExtensionDependencyInstaller(projectDir);
+            boolean materializeExtensionsOnInstall = settings.isMaterializeExtensionsOnInstallEnabled();
+            ExtensionDependencyInstaller extInstaller =
+                new ExtensionDependencyInstaller(projectDir, materializeExtensionsOnInstall);
 
             // Re-install all extension dependencies, overriding any existing
             // lock entries for those names. This is cheap and ensures that
@@ -1918,10 +1920,12 @@ public class LuceeServerManager {
                 }
             }
 
-            org.lucee.lucli.config.LuceeLockFile updated = new org.lucee.lucli.config.LuceeLockFile();
-            updated.setDependencies(newProd);
-            updated.setDevDependencies(newDev);
-            updated.write(projectDir.toFile());
+            if (useLockFile) {
+                org.lucee.lucli.config.LuceeLockFile updated = new org.lucee.lucli.config.LuceeLockFile();
+                updated.setDependencies(newProd);
+                updated.setDevDependencies(newDev);
+                updated.write(projectDir.toFile());
+            }
         } catch (Exception e) {
             System.err.println("Warning: Failed to auto-install extension dependencies: " + e.getMessage());
         }
@@ -1933,23 +1937,8 @@ public class LuceeServerManager {
      */
     public void deployExtensionsForServer(Path projectDir, Path serverInstanceDir) {
         try {
-            // Load lock file to get installed extension dependencies
-            org.lucee.lucli.config.LuceeLockFile lockFile = org.lucee.lucli.config.LuceeLockFile.read(projectDir);
-            
-            java.util.List<org.lucee.lucli.deps.LockedDependency> allExtensions = new java.util.ArrayList<>();
-            
-            // Collect extension dependencies from both prod and dev
-            for (org.lucee.lucli.deps.LockedDependency dep : lockFile.getDependencies().values()) {
-                if ("extension".equals(dep.getType())) {
-                    allExtensions.add(dep);
-                }
-            }
-            
-            for (org.lucee.lucli.deps.LockedDependency dep : lockFile.getDevDependencies().values()) {
-                if ("extension".equals(dep.getType())) {
-                    allExtensions.add(dep);
-                }
-            }
+            java.util.List<org.lucee.lucli.deps.LockedDependency> allExtensions =
+                resolveExtensionDependenciesForRuntime(projectDir);
             
             if (!allExtensions.isEmpty()) {
                 // Deploy extensions that have URL or path
@@ -2009,18 +1998,11 @@ public class LuceeServerManager {
      */
     public static String buildLuceeExtensions(Path projectDir) {
         try {
-            // Load lock file to get installed dependencies
-            org.lucee.lucli.config.LuceeLockFile lockFile = org.lucee.lucli.config.LuceeLockFile.read(projectDir);
-            
+            java.util.List<org.lucee.lucli.deps.LockedDependency> extensionDeps =
+                resolveExtensionDependenciesForRuntime(projectDir);
             java.util.List<String> entries = new java.util.ArrayList<>();
-            
-            // Production dependencies
-            for (org.lucee.lucli.deps.LockedDependency dep : lockFile.getDependencies().values()) {
-                addExtensionEntryIfProviderBased(dep, entries);
-            }
-            
-            // Dev dependencies
-            for (org.lucee.lucli.deps.LockedDependency dep : lockFile.getDevDependencies().values()) {
+
+            for (org.lucee.lucli.deps.LockedDependency dep : extensionDeps) {
                 addExtensionEntryIfProviderBased(dep, entries);
             }
             
@@ -2053,6 +2035,139 @@ public class LuceeServerManager {
             sb.append(";version=").append(version.trim());
         }
         entries.add(sb.toString());
+    }
+
+    /**
+     * Resolve extension dependencies for runtime behavior (deploy folder + LUCEE_EXTENSIONS).
+     *
+     * Resolution order:
+     * 1) When dependencySettings.useLockFile=true: extension entries from lucee-lock.json
+     * 2) Fallback: extension entries synthesized from lucee.json dependencies
+     */
+    private static java.util.List<org.lucee.lucli.deps.LockedDependency> resolveExtensionDependenciesForRuntime(Path projectDir) {
+        java.util.List<org.lucee.lucli.deps.LockedDependency> fromLock = java.util.List.of();
+        org.lucee.lucli.config.LuceeJsonConfig config = null;
+        boolean preferLockFile = false;
+
+        try {
+            config = org.lucee.lucli.config.LuceeJsonConfig.load(projectDir);
+            preferLockFile = config.getDependencySettings().isUseLockFileEnabled();
+        } catch (Exception ignored) {
+            // If lucee.json can't be read, we'll fall back to lockfile-only behavior.
+        }
+
+        if (preferLockFile || config == null) {
+            fromLock = readExtensionDepsFromLockFile(projectDir);
+            if (!fromLock.isEmpty()) {
+                return fromLock;
+            }
+        }
+
+        if (config != null) {
+            java.util.List<org.lucee.lucli.deps.LockedDependency> fromConfig =
+                buildExtensionDepsFromConfig(projectDir, config);
+            if (!fromConfig.isEmpty()) {
+                return fromConfig;
+            }
+        }
+
+        // Final fallback: use lock entries if present, even when not preferred.
+        if (fromLock.isEmpty()) {
+            fromLock = readExtensionDepsFromLockFile(projectDir);
+        }
+        return fromLock;
+    }
+
+    private static java.util.List<org.lucee.lucli.deps.LockedDependency> readExtensionDepsFromLockFile(Path projectDir) {
+        org.lucee.lucli.config.LuceeLockFile lockFile = org.lucee.lucli.config.LuceeLockFile.read(projectDir);
+        java.util.List<org.lucee.lucli.deps.LockedDependency> allExtensions = new java.util.ArrayList<>();
+
+        for (org.lucee.lucli.deps.LockedDependency dep : lockFile.getDependencies().values()) {
+            if ("extension".equals(dep.getType())) {
+                allExtensions.add(dep);
+            }
+        }
+        for (org.lucee.lucli.deps.LockedDependency dep : lockFile.getDevDependencies().values()) {
+            if ("extension".equals(dep.getType())) {
+                allExtensions.add(dep);
+            }
+        }
+        return allExtensions;
+    }
+
+    private static java.util.List<org.lucee.lucli.deps.LockedDependency> buildExtensionDepsFromConfig(
+            Path projectDir,
+            org.lucee.lucli.config.LuceeJsonConfig config
+    ) {
+        java.util.List<org.lucee.lucli.config.DependencyConfig> deps = new java.util.ArrayList<>(config.parseDependencies());
+        if (!Boolean.FALSE.equals(config.getDependencySettings().getInstallDevDependencies())) {
+            deps.addAll(config.parseDevDependencies());
+        }
+
+        java.util.List<org.lucee.lucli.deps.LockedDependency> out = new java.util.ArrayList<>();
+        for (org.lucee.lucli.config.DependencyConfig dep : deps) {
+            if (!"extension".equals(dep.getType())) {
+                continue;
+            }
+
+            org.lucee.lucli.deps.LockedDependency locked = new org.lucee.lucli.deps.LockedDependency();
+            locked.setType("extension");
+            locked.setVersion(dep.getVersion() != null ? dep.getVersion() : "unknown");
+
+            String depPath = dep.getPath();
+            String depUrl = dep.getUrl();
+            if (depPath != null && !depPath.trim().isEmpty()) {
+                Path configuredPath = resolveProjectPath(projectDir, depPath.trim());
+                Path installedPath = resolveInstalledExtensionPath(projectDir, dep.getInstallPath());
+                Path effectivePath = (installedPath != null && Files.isRegularFile(installedPath))
+                    ? installedPath
+                    : configuredPath;
+                if (effectivePath != null) {
+                    String abs = effectivePath.toAbsolutePath().toString();
+                    locked.setSource("path:" + abs);
+                    locked.setInstallPath(abs);
+                }
+                if (configuredPath != null) {
+                    locked.setResolved("file:" + configuredPath.toAbsolutePath());
+                }
+            } else if (depUrl != null && !depUrl.trim().isEmpty()) {
+                Path installedPath = resolveInstalledExtensionPath(projectDir, dep.getInstallPath());
+                if (installedPath != null && Files.isRegularFile(installedPath)) {
+                    String abs = installedPath.toAbsolutePath().toString();
+                    locked.setSource("path:" + abs);
+                    locked.setInstallPath(abs);
+                } else {
+                    // Fallback for non-materialized installs: deploy directly from URL.
+                    locked.setSource(depUrl.trim());
+                }
+                locked.setResolved(depUrl.trim());
+            } else {
+                locked.setSource("extension-provider");
+                String resolvedId = dep.getId();
+                if (resolvedId != null && !resolvedId.isBlank()) {
+                    locked.setId(resolvedId.trim());
+                }
+            }
+
+            out.add(locked);
+        }
+        return out;
+    }
+
+    private static Path resolveInstalledExtensionPath(Path projectDir, String installPath) {
+        if (installPath == null || installPath.isBlank()) {
+            return null;
+        }
+        Path configured = Path.of(installPath.trim());
+        return configured.isAbsolute() ? configured : projectDir.resolve(configured).normalize();
+    }
+
+    private static Path resolveProjectPath(Path projectDir, String configuredPath) {
+        if (configuredPath == null || configuredPath.isBlank()) {
+            return null;
+        }
+        Path raw = Path.of(configuredPath);
+        return raw.isAbsolute() ? raw : projectDir.resolve(raw).normalize();
     }
     
     /**
@@ -2150,6 +2265,12 @@ public class LuceeServerManager {
                 }
             }
         }
+
+        // Preflight: catalina.sh/startup.sh require JAVA_HOME (or JRE_HOME).
+        // Must run AFTER .env and config.envVars are merged so project-level
+        // overrides are honored — otherwise we false-positive when JAVA_HOME
+        // is defined in the project config but not the parent shell.
+        JavaRuntimeCheck.verifyOrExit(env);
 
         // Marker files
         Path normalizedProjectDir = normalizeProjectPath(projectDir);

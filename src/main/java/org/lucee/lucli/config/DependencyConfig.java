@@ -296,7 +296,7 @@ public class DependencyConfig {
         }
 
         // Prefer explicit id, otherwise use the dependency name (slug)
-        String key = (id != null && !id.isBlank()) ? id : name;
+        String key = (id != null && !id.isBlank()) ? id.trim() : name;
         if (key == null || key.isBlank()) {
             return null;
         }
@@ -309,6 +309,7 @@ public class DependencyConfig {
 
         // Fallback: treat direct UUID/32-hex as valid
         if (key.matches("^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$") ||
+            key.matches("^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{16}$") ||
             key.matches("^[0-9A-Fa-f]{32}$")) {
             return key;
         }
