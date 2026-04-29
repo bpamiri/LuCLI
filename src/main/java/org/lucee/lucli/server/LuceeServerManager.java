@@ -2267,6 +2267,12 @@ public class LuceeServerManager {
         }
         TomcatConfigSupport.applyAdminSecurityEnvironment(env, config);
 
+        // Preflight: catalina.sh/startup.sh require JAVA_HOME (or JRE_HOME).
+        // Must run AFTER .env and config.envVars are merged so project-level
+        // overrides are honored — otherwise we false-positive when JAVA_HOME
+        // is defined in the project config but not the parent shell.
+        JavaRuntimeCheck.verifyOrExit(env);
+
         // Marker files
         Path normalizedProjectDir = normalizeProjectPath(projectDir);
         if (normalizedProjectDir != null) {

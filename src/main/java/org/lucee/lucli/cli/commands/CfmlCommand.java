@@ -68,6 +68,7 @@ public class CfmlCommand implements Callable<Object> {
         catch (Exception e) {
             System.err.println("Error in cfml command: " + e.getMessage());
             LuCLI.debugStack(e);
+            return 1;
         }
         finally {
             Timer.stop("CFML Command Execution");
