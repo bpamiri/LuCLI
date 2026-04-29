@@ -2265,6 +2265,7 @@ public class LuceeServerManager {
                 }
             }
         }
+        TomcatConfigSupport.applyAdminSecurityEnvironment(env, config);
 
         // Marker files
         Path normalizedProjectDir = normalizeProjectPath(projectDir);
@@ -2428,6 +2429,7 @@ public class LuceeServerManager {
                 }
             }
         }
+        TomcatConfigSupport.applyAdminSecurityEnvironment(env, config);
 
         // Marker files
         Path pidFile = jettyBase.resolve("server.pid");

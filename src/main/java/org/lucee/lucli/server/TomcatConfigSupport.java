@@ -22,6 +22,8 @@ import java.util.Map;
  * generators have a single source of truth.
  */
 public final class TomcatConfigSupport {
+    private static final String LUCEE_ADMIN_ENABLED_ENV_KEY = "LUCEE_ADMIN_ENABLED";
+    private static final String LUCEE_ADMIN_ENABLED_FALSE_VALUE = "false";
 
     private TomcatConfigSupport() {
     }
@@ -165,6 +167,31 @@ public final class TomcatConfigSupport {
     // ── setenv scripts ──────────────────────────────────────────────────
 
     /**
+     * Returns true when admin is explicitly disabled in configuration.
+     */
+    public static boolean isAdminDisabled(LuceeServerConfig.ServerConfig config) {
+        return config != null
+                && config.admin != null
+                && !config.admin.enabled;
+    }
+
+    /**
+     * Apply security-sensitive admin environment variables to a target map.
+     * <p>
+     * When admin is disabled, Lucee should always receive
+     * {@code LUCEE_ADMIN_ENABLED=false} regardless of user-defined envVars.
+     */
+    public static void applyAdminSecurityEnvironment(Map<String, String> targetEnv,
+                                                     LuceeServerConfig.ServerConfig config) {
+        if (targetEnv == null) {
+            return;
+        }
+        if (isAdminDisabled(config)) {
+            targetEnv.put(LUCEE_ADMIN_ENABLED_ENV_KEY, LUCEE_ADMIN_ENABLED_FALSE_VALUE);
+        }
+    }
+
+    /**
      * Write Tomcat setenv scripts (setenv.sh / setenv.bat) into the given
      * CATALINA_BASE's bin directory.
      */
@@ -199,6 +226,10 @@ public final class TomcatConfigSupport {
         sh.append("  CATALINA_OPTS=\"$BASE_CATALINA_OPTS\"\n");
         sh.append("fi\n");
         sh.append("export CATALINA_OPTS\n");
+        if (isAdminDisabled(config)) {
+            sh.append("LUCEE_ADMIN_ENABLED=\"false\"\n");
+            sh.append("export LUCEE_ADMIN_ENABLED\n");
+        }
         Files.writeString(setenvSh, sh.toString(), StandardCharsets.UTF_8);
         setenvSh.toFile().setExecutable(true);
 
@@ -211,6 +242,9 @@ public final class TomcatConfigSupport {
         bat.append("IF NOT DEFINED CATALINA_OPTS (\r\n");
         bat.append("  set \"CATALINA_OPTS=").append(escapedBatOpts).append("\"\r\n");
         bat.append(")\r\n");
+        if (isAdminDisabled(config)) {
+            bat.append("set \"LUCEE_ADMIN_ENABLED=false\"\r\n");
+        }
         Files.writeString(setenvBat, bat.toString(), StandardCharsets.UTF_8);
 
         System.out.println("Generated setenv scripts in: " + binDir);

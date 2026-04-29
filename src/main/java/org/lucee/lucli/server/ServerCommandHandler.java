@@ -998,6 +998,7 @@ public class ServerCommandHandler {
         if (config.envVars != null && !config.envVars.isEmpty()) {
             envPreview.putAll(config.envVars);
         }
+        TomcatConfigSupport.applyAdminSecurityEnvironment(envPreview, config);
 
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();

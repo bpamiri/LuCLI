@@ -199,6 +199,45 @@ public class CatalinaBaseConfigGeneratorTest {
                 "bin directory should be created for setenv scripts");
     }
 
+    @Test
+    void generateConfiguration_writesLuceeAdminEnabledFalseToSetenvWhenAdminDisabled() throws IOException {
+        LuceeServerConfig.ServerConfig config = createTestConfig();
+        config.admin.enabled = false;
+
+        generator.generateConfiguration(catalinaBase, config, projectDir, catalinaHome, 0, false);
+
+        Path setenvSh = catalinaBase.resolve("bin/setenv.sh");
+        Path setenvBat = catalinaBase.resolve("bin/setenv.bat");
+        assertTrue(Files.exists(setenvSh), "setenv.sh should exist");
+        assertTrue(Files.exists(setenvBat), "setenv.bat should exist");
+
+        String setenvShContent = Files.readString(setenvSh, StandardCharsets.UTF_8);
+        String setenvBatContent = Files.readString(setenvBat, StandardCharsets.UTF_8);
+
+        assertTrue(setenvShContent.contains("LUCEE_ADMIN_ENABLED=\"false\""),
+                "setenv.sh should force LUCEE_ADMIN_ENABLED=false when admin.enabled=false");
+        assertTrue(setenvShContent.contains("export LUCEE_ADMIN_ENABLED"),
+                "setenv.sh should export LUCEE_ADMIN_ENABLED when admin.enabled=false");
+        assertTrue(setenvBatContent.contains("set \"LUCEE_ADMIN_ENABLED=false\""),
+                "setenv.bat should force LUCEE_ADMIN_ENABLED=false when admin.enabled=false");
+    }
+
+    @Test
+    void generateConfiguration_doesNotWriteLuceeAdminEnabledWhenAdminEnabled() throws IOException {
+        LuceeServerConfig.ServerConfig config = createTestConfig();
+        config.admin.enabled = true;
+
+        generator.generateConfiguration(catalinaBase, config, projectDir, catalinaHome, 0, false);
+
+        String setenvShContent = Files.readString(catalinaBase.resolve("bin/setenv.sh"), StandardCharsets.UTF_8);
+        String setenvBatContent = Files.readString(catalinaBase.resolve("bin/setenv.bat"), StandardCharsets.UTF_8);
+
+        assertFalse(setenvShContent.contains("LUCEE_ADMIN_ENABLED"),
+                "setenv.sh should not set LUCEE_ADMIN_ENABLED when admin.enabled=true");
+        assertFalse(setenvBatContent.contains("LUCEE_ADMIN_ENABLED"),
+                "setenv.bat should not set LUCEE_ADMIN_ENABLED when admin.enabled=true");
+    }
+
     // ── generateConfiguration: Tomcat version handling ───────────────────
 
     @Test

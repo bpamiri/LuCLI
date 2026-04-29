@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.lucee.lucli.server.LuceeServerConfig;
 import org.lucee.lucli.server.LuceeServerManager;
+import org.lucee.lucli.server.TomcatConfigSupport;
 
 /**
  * Runtime provider for the "docker" runtime type.
@@ -255,6 +256,10 @@ public final class DockerRuntimeProvider implements RuntimeProvider {
                 cmd.add("-e");
                 cmd.add(key + "=" + value);
             }
+        }
+        if (TomcatConfigSupport.isAdminDisabled(config)) {
+            cmd.add("-e");
+            cmd.add("LUCEE_ADMIN_ENABLED=false");
         }
 
         // Honour basic docker runtime image/tag overrides when provided.

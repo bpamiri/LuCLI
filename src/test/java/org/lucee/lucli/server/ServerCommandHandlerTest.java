@@ -87,6 +87,30 @@ class ServerCommandHandlerTest {
         assertFalse(output.contains("-Dlucee.enable.warmup=false"),
                 "Warmup override should replace existing lucee.enable.warmup values");
     }
+    @Test
+    void serverStartDryRun_includeEnv_showsLuceeAdminEnabledFalseWhenAdminDisabled() throws Exception {
+        Path configFile = tempDir.resolve("lucee.json");
+        Files.writeString(configFile, """
+            {
+              "name": "admin-disabled-env-test",
+              "port": 8080,
+              "admin": {
+                "enabled": false
+              }
+            }
+            """);
+
+        ServerCommandHandler handler = new ServerCommandHandler(true, tempDir);
+        String output = handler.executeCommand("server", new String[] {
+                "start", "--dry-run", "--include-env"
+        });
+
+        assertNotNull(output);
+        assertTrue(output.contains("\"LUCEE_ADMIN_ENABLED\" : \"false\"")
+                || output.contains("\"LUCEE_ADMIN_ENABLED\": \"false\"")
+                || output.contains("\"LUCEE_ADMIN_ENABLED\":\"false\""),
+                "Dry-run --include-env output should include LUCEE_ADMIN_ENABLED=false when admin.enabled=false");
+    }
 
     @Test
     void serverRunDryRun_keyValueOverrideDoesNotMutateLuceeJson() throws Exception {

@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- **Admin Disabled Security Env Enforcement:** When `admin.enabled=false`, LuCLI now enforces `LUCEE_ADMIN_ENABLED=false` in runtime process environments and Tomcat `setenv.sh`/`setenv.bat` generation, and surfaces it in dry-run `--include-env` previews.
 - **Lockfile-Independent Extension Activation:** Server runtime extension activation no longer requires `dependencySettings.useLockFile=true`. `server start`/`server run` now derive extension deployment and `LUCEE_EXTENSIONS` from `lucee.json` dependencies when lockfiles are disabled (including dry-run `--include-env` previews), with lockfile entries still used when enabled/available.
 - **Deps Install Materializes Extension Files by Default:** `lucli deps install` now copies/downloads `type: "extension"` dependencies with `path`/`url` into their `installPath` during install (instead of only recording metadata). Added `dependencySettings.materializeExtensionsOnInstall` (default `true`) to opt out and keep metadata/cache-based behavior.
 - **BATS Coverage for Local Extension Deployment:** Added an integration lifecycle test that creates a fake local `.lex` dependency, runs `lucli deps install`, starts the server, and verifies the extension is deployed under `~/.lucli/servers/<server>/lucee-server/deploy/`.
