@@ -10,6 +10,10 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import javax.script.ScriptEngine;
+import javax.script.ScriptException;
+
+import org.lucee.lucli.LuceeScriptEngine;
 import org.lucee.lucli.secrets.LucliSecretProviderSupport;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -1956,7 +1960,12 @@ public class LuceeServerConfig {
                 result = config.configuration;
             } else {
                 // Merge inline config into the base; inline values override file values
-                result = mergeJsonNodes(result, config.configuration);
+                try {
+                    result = mergeLuceeConfigSection(result, config.configuration);
+                }
+                catch (Exception e) {
+                    throw new IOException("ConfigMerge via Lucee failed: " + e.getMessage(), e);
+                }
             }
         }
         
@@ -2096,27 +2105,64 @@ public class LuceeServerConfig {
      * rather than default values from deserialized objects.
      */
     private static ServerConfig deepMergeConfigs(ServerConfig base, JsonNode rawOverrideNode) throws IOException {
-        // Convert base config to JSON (include all values)
-        JsonNode baseNode = objectMapper.valueToTree(base);
-        
+        // simply return base if there are no overrides to apply
         if (rawOverrideNode == null || rawOverrideNode.isNull() || rawOverrideNode.isEmpty()) {
-            // No overrides to apply
             return base;
         }
-        
-        // Make a copy to avoid modifying the original
-        JsonNode overrideNode = rawOverrideNode.deepCopy();
-        
-        // Remove 'environments' from the override node to prevent copying
-        if (overrideNode.isObject()) {
-            ((com.fasterxml.jackson.databind.node.ObjectNode) overrideNode).remove("environments");
+        try {
+            // make a copy to avoid modifying the original override node
+            JsonNode overrideCopy = rawOverrideNode.deepCopy();
+            if (overrideCopy.isObject()) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) overrideCopy).remove("environments");
+            }
+
+            // extract "configuration" from both sides, ConfigMerge needs a proper CFConfig structure
+            JsonNode baseNode = objectMapper.valueToTree(base);
+            JsonNode baseConfigRaw = baseNode.get("configuration");
+            JsonNode baseConfig = (baseConfigRaw == null || baseConfigRaw.isNull()) ? null : baseConfigRaw;
+
+            JsonNode overrideConfigRaw = overrideCopy.get("configuration");
+            JsonNode overrideConfig = (overrideConfigRaw == null || overrideConfigRaw.isNull()) ? null : overrideConfigRaw;
+
+            // remove "configuration" from both nodes before the regular merge
+            ((com.fasterxml.jackson.databind.node.ObjectNode) baseNode).remove("configuration");
+            ((com.fasterxml.jackson.databind.node.ObjectNode) overrideCopy).remove("configuration");
+
+            // regular deep merge for everything except "configuration"
+            JsonNode mergedNode = mergeJsonNodes(baseNode.deepCopy(), overrideCopy);
+
+            // merge the "configuration" blocks via Lucee configMerge
+            JsonNode mergedConfig = mergeLuceeConfigSection(baseConfig, overrideConfig);
+
+            // put merged "configuration" back into the merged node
+            ((com.fasterxml.jackson.databind.node.ObjectNode) mergedNode).set("configuration", mergedConfig);
+
+            return objectMapper.treeToValue(mergedNode, ServerConfig.class);
         }
-        
-        // Merge the JSON nodes
-        JsonNode merged = mergeJsonNodes(baseNode.deepCopy(), overrideNode);
-        
-        // Convert back to ServerConfig
-        return objectMapper.treeToValue(merged, ServerConfig.class);
+        catch (Exception e) {
+            throw new IOException("ConfigMerge via Lucee failed: " + e.getMessage(), e);
+        }
+    }
+
+    private static JsonNode mergeLuceeConfigSection(JsonNode baseConfig, JsonNode overrideConfig) throws ScriptException, IOException {
+        // mix both
+        if (baseConfig != null && overrideConfig != null) {
+            ScriptEngine engine = LuceeScriptEngine.getInstance().getEngine();
+            engine.put("__cfgBase", objectMapper.writeValueAsString(baseConfig));
+            engine.put("__cfgOverride", objectMapper.writeValueAsString(overrideConfig));
+            engine.eval("__cfgMerged = serializeJSON( var: configMerge( deserializeJSON(__cfgBase), deserializeJSON(__cfgOverride) ), compact: false);");
+            String mergedConfigJson = (String) engine.get("__cfgMerged");
+            return objectMapper.readTree(mergedConfigJson);
+        }
+        // left or right
+        if (baseConfig != null) {
+            return baseConfig;
+        }
+        if (overrideConfig != null) {
+            return overrideConfig;
+        }
+        // create
+        return objectMapper.createObjectNode();
     }
     
     /**
