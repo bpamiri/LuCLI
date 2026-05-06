@@ -23,6 +23,7 @@ public class AiCommandConfigPayloadTest {
 
         assertEquals("lucee.runtime.ai.anthropic.ClaudeEngine", entry.path("class").asText());
         assertEquals(request.secretKey, custom.path("apiKey").asText());
+        assertEquals(5000, custom.path("timeout").asInt());
         assertTrue(custom.path("secretKey").isMissingNode());
         assertTrue(custom.path("type").isMissingNode());
     }
@@ -72,6 +73,7 @@ public class AiCommandConfigPayloadTest {
         assertEquals(request.secretKey, custom.path("secretKey").asText());
         assertEquals("openai", custom.path("type").asText());
         assertTrue(custom.path("apiKey").isMissingNode());
+        assertTrue(custom.path("timeout").isMissingNode());
     }
 
     @Test

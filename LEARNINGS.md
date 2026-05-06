@@ -74,3 +74,8 @@ Append new entries at the bottom under the appropriate date/session.
 ## 2026-04-24
 
 - Security-critical server flags derived from `lucee.json` (for example `admin.enabled=false`) should be enforced in both direct process environment injection and generated startup scripts (`setenv.sh`/`setenv.bat`) so manual or alternate startup paths cannot bypass intended runtime behavior.
+
+## 2026-05-06
+
+- In `.lucli` script execution, picocli subcommands return an integer exit code from `picocli.execute(...)`; if that value is ignored, script runs can print command errors but still exit with status `0`. Always propagate that exit code into the script-level result.
+- OpenAI-compatible provider entries in Lucee AI config should not include `custom.timeout`; recent OpenAI-compatible APIs can reject it as an unsupported request argument. In `lucli ai config add`, gate timeout serialization by provider/engine compatibility and keep explicit user feedback when `--timeout` is ignored.

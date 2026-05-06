@@ -187,7 +187,7 @@ public class AiCommand implements Callable<Integer> {
             @Option(names = "--message", defaultValue = DEFAULT_SYSTEM_MESSAGE, description = "System message")
             private String message;
 
-            @Option(names = "--timeout", defaultValue = DEFAULT_PROVIDER_TIMEOUT_MS, description = "Timeout in milliseconds")
+            @Option(names = "--timeout", description = "Timeout in milliseconds")
             private Integer timeout;
 
             @Option(names = "--default-mode", defaultValue = DEFAULT_PROVIDER_DEFAULT_MODE, description = "Default mode for this endpoint entry")
@@ -241,6 +241,9 @@ public class AiCommand implements Callable<Integer> {
                 request.message = message;
                 request.timeout = timeout;
                 request.defaultMode = defaultMode;
+                if (request.timeout != null && !shouldIncludeTimeoutField(request.type, request.className)) {
+                    StringOutput.Quick.warning("Ignoring --timeout for OpenAI-compatible providers because it is sent as an unsupported request argument.");
+                }
 
                 PromptResult result = executeConfigAdd(request);
                 StringOutput.Quick.success("AI endpoint config saved in Lucee local config: " + request.name);
@@ -271,7 +274,7 @@ public class AiCommand implements Callable<Integer> {
                 secretKey = promptSecret(console, "Secret/API key (supports #env:...# placeholders)", secretKey);
                 url = promptOptional(console, "Custom URL", url);
                 message = promptWithDefault(console, "System message", message);
-                timeout = promptInteger(console, "Timeout (ms)", timeout, 5000);
+                timeout = promptInteger(console, "Timeout (ms)", timeout, Integer.valueOf(DEFAULT_PROVIDER_TIMEOUT_MS));
                 defaultMode = promptWithDefault(console, "Default mode", defaultMode);
 
                 System.out.println();
@@ -1053,7 +1056,7 @@ __lucliAiResultText = __lucliAiResultJson;
         putIfNotBlank(custom, "message", request.message);
         putIfNotBlank(custom, "model", request.model);
         putIfNotBlank(custom, "url", request.url);
-        if (request.timeout != null) {
+        if (request.timeout != null && shouldIncludeTimeoutField(providerType, engineClass)) {
             custom.put("timeout", request.timeout);
         }
 
@@ -1152,6 +1155,17 @@ __lucliAiResultText = __lucliAiResultJson;
             return false;
         }
         return OPENAI_COMPATIBLE_PROVIDER_TYPES.contains(normalizedProviderType) || !isBlank(normalizedProviderType);
+    }
+
+    private static boolean shouldIncludeTimeoutField(String providerType, String engineClass) {
+        String normalizedProviderType = normalizeProviderType(providerType);
+        if (OPENAI_COMPATIBLE_PROVIDER_TYPES.contains(normalizedProviderType)) {
+            return false;
+        }
+        if (isBlank(engineClass)) {
+            return true;
+        }
+        return !OPENAI_ENGINE_CLASS.equalsIgnoreCase(engineClass.trim());
     }
 
     private static void putIfNotBlank(ObjectNode node, String fieldName, String value) {
