@@ -2265,6 +2265,7 @@ public class LuceeServerManager {
                 }
             }
         }
+        TomcatConfigSupport.applyAdminSecurityEnvironment(env, config);
 
         // Preflight: catalina.sh/startup.sh require JAVA_HOME (or JRE_HOME).
         // Must run AFTER .env and config.envVars are merged so project-level
@@ -2434,6 +2435,7 @@ public class LuceeServerManager {
                 }
             }
         }
+        TomcatConfigSupport.applyAdminSecurityEnvironment(env, config);
 
         // Marker files
         Path pidFile = jettyBase.resolve("server.pid");

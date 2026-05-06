@@ -70,3 +70,7 @@ Append new entries at the bottom under the appropriate date/session.
 - `type: "extension"` dependencies now have an explicit install-time materialization toggle via `dependencySettings.materializeExtensionsOnInstall` (default `true`). When enabled, `deps install` writes concrete `.lex` files to `installPath`; when disabled, it keeps metadata/cache-style behavior.
 - For end-to-end extension lifecycle coverage, the reliable integration assertion is that a local `.lex` dependency appears at `~/.lucli/servers/<server>/lucee-server/deploy/<file>.lex` after `deps install` + `server start`; deploy-path existence is a more stable contract check than strict byte-for-byte equality in BATS.
 - Lucee extension provider IDs can appear in a non-canonical `8-4-4-16` hex grouping (for example `465E1E35-2425-4F4E-8B3FAB638BD7280A`), so extension ID validation/resolution must support that format in addition to canonical UUID and 32-hex forms.
+
+## 2026-04-24
+
+- Security-critical server flags derived from `lucee.json` (for example `admin.enabled=false`) should be enforced in both direct process environment injection and generated startup scripts (`setenv.sh`/`setenv.bat`) so manual or alternate startup paths cannot bypass intended runtime behavior.
