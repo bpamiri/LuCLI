@@ -123,3 +123,19 @@ EOF
     assert_success
     assert_output_contains "Run .lucli works"
 }
+
+@test "lucli script exits non-zero when a command fails" {
+    local script_base script_path missing_script
+    script_base="$(mktemp "${BATS_TEST_TMPDIR}/test_run_failure.XXXXXX")"
+    script_path="${script_base}.lucli"
+    mv "${script_base}" "${script_path}"
+    missing_script="${BATS_TEST_TMPDIR}/missing-${BATS_TEST_NUMBER}.cfs"
+
+    cat > "${script_path}" << EOF
+run "${missing_script}"
+EOF
+
+    run_lucli "${script_path}"
+    assert_failure
+    assert_output_contains "File not found"
+}

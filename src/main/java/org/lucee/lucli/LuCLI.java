@@ -1131,6 +1131,7 @@ public class LuCLI implements Callable<Integer> {
 
         StringOutput stringOutput = StringOutput.getInstance();
         boolean assertionFailed = false;
+        boolean commandFailed = false;
 
         // Pattern for simple variable assignments with command substitution: NAME=$(command ...)
         Pattern assignmentPattern = Pattern.compile("^(?i)(?:set\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(?:\\$\\((.*)\\)|(.+))\\s*$");
@@ -1190,6 +1191,7 @@ public class LuCLI implements Callable<Integer> {
                 // Quick validation: must have '=' after 'set '
                 if (trimmed.indexOf('=') < 1) {
                     StringOutput.Quick.error("SET directive syntax error: " + line);
+                    commandFailed = true;
                     continue;
                 }
 
@@ -1217,7 +1219,7 @@ public class LuCLI implements Callable<Integer> {
                     // 1) Command substitution in SET: set NAME=$(command ...)
                     if (isExecEvaluation(value)) {
                         String innerCommand = getExecEvaluationInnerCommand(value);
-                        handleCommandSubstitutionAssignment(
+                        int assignmentExitCode = handleCommandSubstitutionAssignment(
                             key,
                             innerCommand,
                             commandProcessor,
@@ -1225,6 +1227,9 @@ public class LuCLI implements Callable<Integer> {
                             picocli,
                             stringOutput
                         );
+                        if (assignmentExitCode != 0) {
+                            commandFailed = true;
+                        }
                         continue;
                     }
 
@@ -1242,6 +1247,7 @@ public class LuCLI implements Callable<Integer> {
                     } catch (Exception e) {
                         StringOutput.Quick.error("Error processing SET value for '" + key + "': " + e.getMessage());
                         debugStack(e);
+                        commandFailed = true;
                     }
                     continue;
                 }
@@ -1253,7 +1259,7 @@ public class LuCLI implements Callable<Integer> {
                 String varName = assignmentMatcher.group(1);
                 String innerCommand = assignmentMatcher.group(2).trim();
 
-                handleCommandSubstitutionAssignment(
+                int assignmentExitCode = handleCommandSubstitutionAssignment(
                     varName,
                     innerCommand,
                     commandProcessor,
@@ -1261,6 +1267,9 @@ public class LuCLI implements Callable<Integer> {
                     picocli,
                     stringOutput
                 );
+                if (assignmentExitCode != 0) {
+                    commandFailed = true;
+                }
                 continue;
             }
 
@@ -1274,6 +1283,7 @@ public class LuCLI implements Callable<Integer> {
                 redirection = parseScriptOutputRedirection(processedLine);
             } catch (IllegalArgumentException e) {
                 StringOutput.Quick.error("Script redirection syntax error: " + e.getMessage());
+                commandFailed = true;
                 continue;
             }
 
@@ -1319,13 +1329,17 @@ public class LuCLI implements Callable<Integer> {
             }
 
             // Delegate all other commands to the shared dispatcher
-            String result = executeLucliScriptCommand(
+            ScriptCommandResult commandResult = executeLucliScriptCommand(
                 commandToRun,
                 commandProcessor,
                 externalCommandProcessor,
                 picocli,
                 true
             );
+            if (commandResult.exitCode != 0) {
+                commandFailed = true;
+            }
+            String result = commandResult.output;
 
             if (redirection != null) {
                 try {
@@ -1346,8 +1360,8 @@ public class LuCLI implements Callable<Integer> {
 
         }
 
-        // Scripts are best-effort; fail overall if any assertion failed
-        return assertionFailed ? 1 : 0;
+        // Scripts are best-effort; fail overall if any assertion or command failed
+        return (assertionFailed || commandFailed) ? 1 : 0;
     }
 
     static ScriptOutputRedirection parseScriptOutputRedirection(String line) {
@@ -1475,6 +1489,16 @@ public class LuCLI implements Callable<Integer> {
             this.append = append;
         }
     }
+
+    static final class ScriptCommandResult {
+        final String output;
+        final int exitCode;
+
+        ScriptCommandResult(String output, int exitCode) {
+            this.output = output == null ? "" : output;
+            this.exitCode = exitCode;
+        }
+    }
 //  ExecFile, ExecLine, ExecVar, ExecEval
     
     /**
@@ -1572,7 +1596,7 @@ public class LuCLI implements Callable<Integer> {
      * Helper to execute a command inside $(...) for variable assignment and record its result
      * into the script environment and placeholder system.
      */
-    private static void handleCommandSubstitutionAssignment(
+    private static int handleCommandSubstitutionAssignment(
             String varName,
             String innerCommand,
             org.lucee.lucli.CommandProcessor commandProcessor,
@@ -1588,13 +1612,17 @@ public class LuCLI implements Callable<Integer> {
 
 
 
-        String captured = executeLucliScriptCommand(
+        ScriptCommandResult commandResult = executeLucliScriptCommand(
             processedInner,
             commandProcessor,
             externalCommandProcessor,
             picocli,
             true
         );
+        String captured = commandResult.output;
+        if (commandResult.exitCode != 0) {
+            return commandResult.exitCode;
+        }
 
         debug("LuCLIScript", "Captured output for variable '" + varName + "': " + captured);
 
@@ -1604,6 +1632,7 @@ public class LuCLI implements Callable<Integer> {
         // Also update the generic result history so ${_} and last(n)
         // can see values coming from explicit assignments.
         recordLucliResult(captured);
+        return 0;
     }
  
     /**
@@ -1611,7 +1640,7 @@ public class LuCLI implements Callable<Integer> {
      * This mirrors the behavior of the interactive terminal, with optional output capture
      * for use in variable assignment (e.g., FOO=$(command ...)).
      */
-    private static String executeLucliScriptCommand(
+    private static ScriptCommandResult executeLucliScriptCommand(
         String processedLine,
         org.lucee.lucli.CommandProcessor commandProcessor,
         org.lucee.lucli.ExternalCommandProcessor externalCommandProcessor,
@@ -1626,14 +1655,14 @@ public class LuCLI implements Callable<Integer> {
 
         // Should be fairly unreachable since this is pre-checked, but guard against empty lines
         if(scriptLine.trim().isEmpty()) {
-            return "";
+            return new ScriptCommandResult("", 0);
         }
 
 
         String[] firstTokens = commandProcessor.parseCommand(scriptLine);
         if (firstTokens.length > 0 && "lucli".equalsIgnoreCase(firstTokens[0])) {
             if (firstTokens.length == 1) {
-                return ""; // bare "lucli"
+                return new ScriptCommandResult("", 0); // bare "lucli"
             }
             StringBuilder sb = new StringBuilder();
             for (int i = 1; i < firstTokens.length; i++) {
@@ -1656,13 +1685,13 @@ public class LuCLI implements Callable<Integer> {
                 String cfmlCode = scriptLine.substring(firstSpace + 1).trim();
                 if (cfmlCode.isEmpty()) {
                     StringOutput.Quick.error("cfml: missing expression");
-                    return "";
+                    return new ScriptCommandResult("", 1);
                 }
 
                 // Call Lucee directly instead of going through picocli
                 // This avoids issues with getExecutionResult() not propagating from subcommands
                 Object result = LuceeScriptEngine.getInstance().eval(cfmlCode);
-                return (result != null ? result.toString() : "");
+                return new ScriptCommandResult((result != null ? result.toString() : ""), 0);
 
 
 
@@ -1716,7 +1745,7 @@ public class LuCLI implements Callable<Integer> {
             // For all non-cfml commands, it is safe to parse the line into parts.
             String[] parts = commandProcessor.parseCommand(scriptLine);
             if (parts.length == 0) {
-                return "";
+                return new ScriptCommandResult("", 0);
             }
 
             String command = parts[0].toLowerCase();
@@ -1727,10 +1756,11 @@ public class LuCLI implements Callable<Integer> {
                     java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
                     java.io.PrintStream originalOut = System.out;
                     java.io.PrintStream originalErr = System.err;
+                    int exitCode;
                     try {
                         System.setOut(new java.io.PrintStream(baos));
                         System.setErr(new java.io.PrintStream(baos));
-                        picocli.execute(parts); // Picocli writes directly to System.out/err
+                        exitCode = picocli.execute(parts); // Picocli writes directly to System.out/err
                         setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
                     } finally {
                         System.setOut(originalOut);
@@ -1740,11 +1770,11 @@ public class LuCLI implements Callable<Integer> {
                     if (captured != null && !captured.isEmpty()) {
                         recordLucliResult(captured);
                     }
-                    return captured;
+                    return new ScriptCommandResult(captured, exitCode);
                 } else {
-                    picocli.execute(parts);
+                    int exitCode = picocli.execute(parts);
                     setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
-                    return "";
+                    return new ScriptCommandResult("", exitCode);
                 }
             }
 
@@ -1772,11 +1802,11 @@ public class LuCLI implements Callable<Integer> {
                     if (captured != null && !captured.isEmpty()) {
                         recordLucliResult(captured);
                     }
-                    return captured;
+                    return new ScriptCommandResult(captured, 0);
                 } else {
                     org.lucee.lucli.modules.ModuleCommand.executeModuleByName(command, moduleArgs);
                     setRuntimeCwd(commandProcessor.getFileSystemState().getCurrentWorkingDirectory());
-                    return "";
+                    return new ScriptCommandResult("", 0);
                 }
             }
 
@@ -1788,12 +1818,12 @@ public class LuCLI implements Callable<Integer> {
                     recordLucliResult(fsResult);
                 }
                 if (captureOutput) {
-                    return fsResult != null ? fsResult : "";
+                    return new ScriptCommandResult(fsResult != null ? fsResult : "", 0);
                 } else {
                     if (fsResult != null && !fsResult.isEmpty()) {
                         System.out.println(fsResult);
                     }
-                    return "";
+                    return new ScriptCommandResult("", 0);
                 }
             }
 
@@ -1804,18 +1834,18 @@ public class LuCLI implements Callable<Integer> {
                 recordLucliResult(extResult);
             }
             if (captureOutput) {
-                return extResult != null ? extResult : "";
+                return new ScriptCommandResult(extResult != null ? extResult : "", 0);
             } else {
                 if (extResult != null && !extResult.isEmpty()) {
                     System.out.println(extResult);
                 }
-                return "";
+                return new ScriptCommandResult("", 0);
             }
 
         } catch (Exception e) {
             StringOutput.Quick.error("Error executing script line '" + processedLine + "': " + e.getMessage());
             debugStack(e);
-            return "";
+            return new ScriptCommandResult("", 1);
         }
     }
 
