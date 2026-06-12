@@ -355,6 +355,9 @@ public class LuCLI implements Callable<Integer> {
      */
     private Integer executeViaRunCommand(String filePath, String[] args) throws Exception {
         List<String> cmdArgs = new ArrayList<>();
+        // See executeViaModulesCommand: the nested execute() re-parses and
+        // would otherwise reset the global flags the first parse consumed.
+        appendConsumedGlobalFlags(cmdArgs);
         cmdArgs.add("run");
         cmdArgs.add(filePath);
         if (args != null && args.length > 0) {
@@ -379,10 +382,20 @@ public class LuCLI implements Callable<Integer> {
             }
         }
 
-        verbose("Executing module shortcut: " + moduleName + 
+        verbose("Executing module shortcut: " + moduleName +
             " (equivalent to 'lucli modules run " + moduleName + " " + String.join(" ", args) + "')");
-        
+
         List<String> cmdArgs = new ArrayList<>();
+        // The first parse consumed any global flags (-v/--verbose, -d/--debug,
+        // -t/--timing, -w/--whitespace) wherever they appeared on the command
+        // line, and the nested spec.commandLine().execute() below RE-PARSES
+        // from scratch — resetting verboseOption & co. to their defaults, so
+        // call() then overwrites LuCLI.verbose/debug/timing with false before
+        // the module executes. Re-assert the consumed flags so module
+        // execution (init(verboseEnabled=...) and the engine's `verbose`
+        // binding) sees what the user actually typed, e.g.
+        // `wheels test --verbose` (wheels-dev/wheels#3113).
+        appendConsumedGlobalFlags(cmdArgs);
         cmdArgs.add("modules");
         cmdArgs.add("run");
         cmdArgs.add(moduleName);
@@ -390,6 +403,17 @@ public class LuCLI implements Callable<Integer> {
             cmdArgs.addAll(Arrays.asList(args));
         }
         return spec.commandLine().execute(cmdArgs.toArray(new String[0]));
+    }
+
+    /**
+     * Re-append the global flags the first parse consumed, so a nested
+     * re-dispatch via spec.commandLine().execute() re-establishes them.
+     */
+    private void appendConsumedGlobalFlags(List<String> cmdArgs) {
+        if (verboseOption) cmdArgs.add("--verbose");
+        if (debugOption) cmdArgs.add("--debug");
+        if (timingOption) cmdArgs.add("--timing");
+        if (preserveWhitespaceOption) cmdArgs.add("--whitespace");
     }
 
     /**
